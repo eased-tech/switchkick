@@ -188,7 +188,7 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   const target = resolveTiers(loaded.config)[settings.tier];
   const app = createApp({
     apiKey,
-    route: { tier: settings.tier, model: target.model },
+    route: { tier: settings.tier, ...target },
     upstreamBaseUrl: loaded.config.upstream.baseUrl.replace(/\/+$/, ""),
     maxBodyBytes: loaded.config.server.maxBodyBytes,
     token: settings.token,
@@ -207,7 +207,8 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   io.stderr(
     `switchkick listening on http://${host}:${address.port}\n` +
       `  config: ${loaded.path ?? "built-in defaults"}\n` +
-      `  route:  static, ${settings.tier} → ${target.model}\n`,
+      `  route:  static, ${settings.tier} → ${target.model}` +
+      `${target.effort ? `, effort ${target.effort}` : ""}\n`,
   );
   return { exitCode: 0, server };
 }

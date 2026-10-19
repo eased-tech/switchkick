@@ -216,6 +216,7 @@ describe("decision log", () => {
         tier: "balanced",
         requestedModel: "gpt-5",
         model: ROUTE.model,
+        effort: null,
         reason: "static",
         status: 200,
         generationId: "gen-abc",

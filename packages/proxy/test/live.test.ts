@@ -13,7 +13,8 @@ describe.skipIf(!apiKey)("live OpenRouter", () => {
   beforeAll(async () => {
     proxy = await startProxy({
       apiKey: apiKey ?? "",
-      route: { tier: "fast", model: "anthropic/claude-haiku-4.5" },
+      // Haiku 5.5 accepts every effort level switchkick allows.
+      route: { tier: "fast", model: "anthropic/claude-haiku-5.5", effort: "low" },
       log,
     });
   });
@@ -25,7 +26,8 @@ describe.skipIf(!apiKey)("live OpenRouter", () => {
       body: JSON.stringify({
         model: "ignored-by-static-mode",
         stream: true,
-        max_tokens: 16,
+        max_tokens: 2048,
+        reasoning: { max_tokens: 1024 },
         messages: [{ role: "user", content: PROMPT }],
       }),
     });
@@ -39,12 +41,12 @@ describe.skipIf(!apiKey)("live OpenRouter", () => {
       headers: { "anthropic-version": "2023-06-01" },
       body: JSON.stringify({
         model: "claude-sonnet-ignored",
-        max_tokens: 16,
+        max_tokens: 2048,
         messages: [{ role: "user", content: PROMPT }],
       }),
     });
     expect(res.status).toBe(200);
-    expect(res.json()).toMatchObject({ type: "message", model: "anthropic/claude-haiku-4.5" });
+    expect(res.json()).toMatchObject({ type: "message", model: "anthropic/claude-haiku-5.5" });
   });
 
   it("streams Responses", { timeout: 30_000 }, async () => {
@@ -52,7 +54,7 @@ describe.skipIf(!apiKey)("live OpenRouter", () => {
       body: JSON.stringify({
         stream: true,
         store: true,
-        max_output_tokens: 16,
+        max_output_tokens: 2048,
         input: [{ type: "message", role: "user", content: PROMPT }],
       }),
     });

@@ -1,12 +1,16 @@
 import type { Tier } from "@switchkick/core";
 import type { Context, Handler } from "hono";
+import type { Effort } from "./config.js";
+import { applyEffort } from "./effort.js";
 import { type ApiFormat, type ErrorKind, errorBody, UPSTREAM_PATHS } from "./formats.js";
 import type { DecisionLog, DecisionLogEntry } from "./log.js";
 
-/** Where a request goes in static mode: one tier, one model. */
+/** Where a request goes in static mode: one tier, one model, and optionally an effort. */
 export interface StaticRoute {
   tier: Tier;
   model: string;
+  /** Replaces the client's reasoning effort when set. */
+  effort?: Effort;
 }
 
 export interface ForwardOptions {
@@ -105,6 +109,7 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       tier: route.tier,
       requestedModel: null,
       model: route.model,
+      effort: route.effort ?? null,
       reason: "static",
       status: 0,
       generationId: null,
@@ -127,6 +132,7 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
     entry.stream = body.stream === true;
     if (typeof body.model === "string") entry.requestedModel = body.model;
     body.model = route.model;
+    if (route.effort) applyEffort(format, body, route.effort);
 
     if (format === "responses") {
       // OpenRouter's Responses API is stateless and rejects both of these with a 400.

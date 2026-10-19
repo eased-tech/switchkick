@@ -46,13 +46,16 @@ To change the models or other settings, write a config file at `~/.config/switch
 mode: static
 defaultTier: balanced
 tiers:
-  frontier: { model: anthropic/claude-opus-5.5 }
+  frontier: { model: anthropic/claude-opus-5.5, effort: xhigh }
 attribution: true
 server: { host: 127.0.0.1, port: 8787, maxBodyBytes: 20mb }
 log: { enabled: true, file: ~/.local/state/switchkick/decisions.jsonl, maxBytes: 50mb }
 ```
 
-A tier set in the file replaces the built-in one. Command-line flags override the file. The
+A tier set in the file replaces the built-in one. A tier's `effort` (`low`, `medium`, `high`,
+`xhigh` or `max`) replaces whatever reasoning effort the client sent. It's sent as
+`reasoning.effort` to Chat Completions and Responses, and as `output_config.effort` to Messages.
+Without one, the client's own setting passes through. Command-line flags override the file. The
 schema is in [`schema/v1.json`](schema/v1.json); unknown keys are rejected so typos don't go
 unnoticed.
 
