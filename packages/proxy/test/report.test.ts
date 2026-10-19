@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DecisionLogEntry } from "../src/index.js";
-import { parseSince, priceUsage, type ReportSummary } from "../src/report.js";
+import { formatUsd, parseSince, priceUsage, type ReportSummary } from "../src/report.js";
 import { type FakeMachine, fakeMachine, json } from "./system.js";
 
 let machine: FakeMachine;
@@ -155,6 +155,18 @@ describe("report helpers", () => {
     expect(
       priceUsage({ inputTokens: 100, cachedTokens: 90, outputTokens: 1 }, pricing),
     ).toBeCloseTo(29);
+  });
+
+  it("shows amounts under a cent to two significant figures", () => {
+    expect(formatUsd(0)).toBe("$0");
+    expect(formatUsd(0.0000208)).toBe("$0.000021");
+    expect(formatUsd(0.00002)).toBe("$0.000020");
+    expect(formatUsd(0.0003)).toBe("$0.00030");
+    expect(formatUsd(0.004)).toBe("$0.0040");
+    expect(formatUsd(0.00999)).toBe("$0.01");
+    expect(formatUsd(0.0000001)).toBe("<$0.000001");
+    expect(formatUsd(1.234)).toBe("$1.23");
+    expect(formatUsd(-0.00002)).toBe("-$0.000020");
   });
 
   it("parses durations and dates", () => {
