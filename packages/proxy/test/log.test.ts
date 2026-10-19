@@ -13,6 +13,7 @@ const ENTRY: DecisionLogEntry = {
   tier: "balanced",
   requestedModel: null,
   model: "test/routed-model",
+  effort: null,
   reason: "static",
   status: 200,
   generationId: null,

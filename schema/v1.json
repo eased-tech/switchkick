@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "JSON Schema URL, for editor support.",
+      "type": "string"
+    },
+    "mode": {
+      "default": "static",
+      "description": "How requests are routed. `static` sends every request to `defaultTier`.",
+      "type": "string",
+      "const": "static"
+    },
+    "defaultTier": {
+      "default": "balanced",
+      "description": "Tier used in static mode.",
+      "type": "string",
+      "enum": [
+        "fast",
+        "balanced",
+        "frontier"
+      ]
+    },
+    "tiers": {
+      "default": {},
+      "description": "Model per tier. A tier given here replaces the built-in one entirely.",
+      "type": "object",
+      "properties": {
+        "fast": {
+          "description": "Defaults to { model: anthropic/claude-haiku-5.5 }.",
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "description": "OpenRouter model slug, e.g. anthropic/claude-sonnet-5.5."
+            },
+            "effort": {
+              "description": "Reasoning effort to request. Omit to keep whatever the client sent.",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "model"
+          ],
+          "additionalProperties": false
+        },
+        "balanced": {
+          "description": "Defaults to { model: anthropic/claude-sonnet-5.5 }.",
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "description": "OpenRouter model slug, e.g. anthropic/claude-sonnet-5.5."
+            },
+            "effort": {
+              "description": "Reasoning effort to request. Omit to keep whatever the client sent.",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "model"
+          ],
+          "additionalProperties": false
+        },
+        "frontier": {
+          "description": "Defaults to { model: anthropic/claude-opus-5.5 }.",
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "minLength": 1,
+              "description": "OpenRouter model slug, e.g. anthropic/claude-sonnet-5.5."
+            },
+            "effort": {
+              "description": "Reasoning effort to request. Omit to keep whatever the client sent.",
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ]
+            }
+          },
+          "required": [
+            "model"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "attribution": {
+      "default": true,
+      "description": "Send OpenRouter app-attribution headers naming switchkick.",
+      "type": "boolean"
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "default": "127.0.0.1",
+          "description": "Address to listen on.",
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "default": 8787,
+          "description": "Port to listen on.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "maxBodyBytes": {
+          "description": "Largest request body accepted.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "string",
+              "pattern": "^\\s*\\d+\\s*([kKmMgG]?[bB])\\s*$"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "upstream": {
+      "default": {
+        "baseUrl": "https://openrouter.ai/api/v1"
+      },
+      "type": "object",
+      "properties": {
+        "baseUrl": {
+          "default": "https://openrouter.ai/api/v1",
+          "description": "OpenRouter API URL.",
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "additionalProperties": false
+    },
+    "log": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "description": "Write the decision log.",
+          "type": "boolean"
+        },
+        "file": {
+          "description": "Decision log path. Defaults to $XDG_STATE_HOME/switchkick/decisions.jsonl.",
+          "type": "string",
+          "minLength": 1
+        },
+        "maxBytes": {
+          "description": "Size at which the log is rotated.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "string",
+              "pattern": "^\\s*\\d+\\s*([kKmMgG]?[bB])\\s*$"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$id": "https://eased-tech.github.io/switchkick/schema/v1.json",
+  "title": "switchkick configuration"
+}

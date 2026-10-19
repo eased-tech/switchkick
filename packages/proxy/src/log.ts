@@ -19,6 +19,8 @@ export interface DecisionLogEntry {
   requestedModel: string | null;
   /** The model switchkick sent upstream. */
   model: string;
+  /** The reasoning effort switchkick set, or null if the client's was left alone. */
+  effort: string | null;
   reason: string;
   /** The HTTP status returned to the client. 499 means the client disconnected first. */
   status: number;
@@ -28,6 +30,8 @@ export interface DecisionLogEntry {
   upstreamMs: number | null;
   /** Set when switchkick answered with its own error instead of OpenRouter's response. */
   error?: string;
+  /** The underlying failure code for upstream errors, e.g. `ECONNREFUSED`. */
+  cause?: string;
   /** Changes switchkick made to the request beyond the model, e.g. `store_rewritten`. */
   warnings?: string[];
 }

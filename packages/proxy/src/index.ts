@@ -6,6 +6,31 @@ export {
   DEFAULT_UPSTREAM_BASE_URL,
   VERSION,
 } from "./app.js";
+export {
+  CONFIG_SCHEMA_URL,
+  type Config,
+  ConfigError,
+  ConfigSchema,
+  configDir,
+  configJsonSchema,
+  EFFORTS,
+  type Effort,
+  type LoadedConfig,
+  loadConfig,
+  parseConfig,
+  resolveTiers,
+} from "./config.js";
+export {
+  type CredentialDeps,
+  CredentialError,
+  defaultCredentialDeps,
+  envFilePath,
+  type FoundKey,
+  findApiKey,
+  KEY_ACCOUNT,
+  KEY_SERVICE,
+  parseEnvFile,
+} from "./credentials.js";
 export { type ApiFormat, errorBody, FORMATS, ROUTE_PATHS } from "./formats.js";
 export { ATTRIBUTION, type StaticRoute } from "./forward.js";
 export {
@@ -17,4 +42,6 @@ export {
   type FileLog,
   NO_LOG,
 } from "./log.js";
+export { type RunIo, type RunResult, resolveSettings, run, type ServeSettings } from "./run.js";
 export { DEFAULT_TIER_MODELS } from "./tiers.js";
+export { estimateInputTokens } from "./tokens.js";

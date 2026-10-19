@@ -22,26 +22,32 @@ export type ErrorKind =
   | "invalid_request"
   | "authentication"
   | "permission"
+  | "not_found"
   | "too_large"
   | "unsupported_media_type"
-  | "upstream_unreachable";
+  | "upstream_unreachable"
+  | "upstream_timeout";
 
 const ANTHROPIC_TYPES: Record<ErrorKind, string> = {
   invalid_request: "invalid_request_error",
   authentication: "authentication_error",
   permission: "permission_error",
+  not_found: "not_found_error",
   too_large: "request_too_large",
   unsupported_media_type: "invalid_request_error",
   upstream_unreachable: "api_error",
+  upstream_timeout: "timeout_error",
 };
 
 const OPENAI_TYPES: Record<ErrorKind, string> = {
   invalid_request: "invalid_request_error",
   authentication: "authentication_error",
   permission: "permission_error",
+  not_found: "invalid_request_error",
   too_large: "invalid_request_error",
   unsupported_media_type: "invalid_request_error",
   upstream_unreachable: "server_error",
+  upstream_timeout: "server_error",
 };
 
 /**

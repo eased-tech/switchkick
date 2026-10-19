@@ -1,12 +1,16 @@
 import type { Tier } from "@switchkick/core";
 import type { Context, Handler } from "hono";
+import type { Effort } from "./config.js";
+import { applyEffort } from "./effort.js";
 import { type ApiFormat, type ErrorKind, errorBody, UPSTREAM_PATHS } from "./formats.js";
 import type { DecisionLog, DecisionLogEntry } from "./log.js";
 
-/** Where a request goes in static mode: one tier, one model. */
+/** Where a request goes in static mode: one tier, one model, and optionally an effort. */
 export interface StaticRoute {
   tier: Tier;
   model: string;
+  /** Replaces the client's reasoning effort when set. */
+  effort?: Effort;
 }
 
 export interface ForwardOptions {
@@ -84,6 +88,25 @@ function responseHeaders(upstream: Response): Headers {
   return headers;
 }
 
+/** Failure codes meaning OpenRouter was reachable but too slow, rather than unreachable. */
+const TIMEOUT_CODES = new Set(["UND_ERR_HEADERS_TIMEOUT", "UND_ERR_CONNECT_TIMEOUT", "ETIMEDOUT"]);
+
+/**
+ * The first error code in a fetch failure's cause chain. fetch rejects with a bare
+ * `TypeError: fetch failed`; the reason (`ECONNREFUSED`, `UND_ERR_HEADERS_TIMEOUT`, ...) is
+ * nested in `cause`, sometimes inside an AggregateError.
+ */
+export function failureCode(error: unknown): string | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    const errors = (current as { errors?: unknown }).errors;
+    current = (current as { cause?: unknown }).cause ?? (Array.isArray(errors) ? errors[0] : null);
+  }
+  return null;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -105,13 +128,20 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       tier: route.tier,
       requestedModel: null,
       model: route.model,
+      effort: route.effort ?? null,
       reason: "static",
       status: 0,
       generationId: null,
       upstreamMs: null,
     };
-    const fail = (status: 400 | 502, kind: ErrorKind, message: string, param?: string) => {
-      log.write({ ...entry, status, error: kind });
+    const fail = (
+      status: 400 | 502 | 504,
+      kind: ErrorKind,
+      message: string,
+      param?: string,
+      cause?: string,
+    ) => {
+      log.write({ ...entry, status, error: kind, ...(cause ? { cause } : {}) });
       return c.json(errorBody(format, kind, message, param), status);
     };
 
@@ -127,6 +157,7 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
     entry.stream = body.stream === true;
     if (typeof body.model === "string") entry.requestedModel = body.model;
     body.model = route.model;
+    if (route.effort) applyEffort(format, body, route.effort);
 
     if (format === "responses") {
       // OpenRouter's Responses API is stateless and rejects both of these with a 400.
@@ -158,13 +189,29 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
           signal,
         },
       );
-    } catch {
+    } catch (error) {
       if (signal.aborted) {
         log.write({ ...entry, status: 499, error: "client_closed" });
         // Nobody is listening; this response is never sent.
         return new Response(null, { status: 499 });
       }
-      return fail(502, "upstream_unreachable", "Could not reach OpenRouter.");
+      const code = failureCode(error) ?? "unknown";
+      if (TIMEOUT_CODES.has(code)) {
+        return fail(
+          504,
+          "upstream_timeout",
+          `OpenRouter did not respond in time (${code}).`,
+          undefined,
+          code,
+        );
+      }
+      return fail(
+        502,
+        "upstream_unreachable",
+        `Could not reach OpenRouter (${code}).`,
+        undefined,
+        code,
+      );
     }
 
     log.write({
