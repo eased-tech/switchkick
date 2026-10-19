@@ -84,6 +84,12 @@ Responses come back unchanged, streaming included. Two things differ from OpenAI
 API, because OpenRouter's is stateless: `previous_response_id` is rejected with a 400, and
 `store: true` is sent as `false`.
 
+If OpenRouter can't be reached, switchkick answers 502; if it's reachable but doesn't start
+responding within Node's 5-minute limit, 504. Both say why (e.g. `ECONNREFUSED`,
+`UND_ERR_HEADERS_TIMEOUT`), and so does the decision log. A stream that stalls for 5 minutes after
+it has started is cut off; by then the status has been sent, so the client sees a truncated
+stream.
+
 Each request adds one line to a decision log at `~/.local/state/switchkick/decisions.jsonl`
 (`--log-file` to move it, `--no-log` to turn it off). The log records the routing decision,
 status and OpenRouter generation id, never prompt or response text.

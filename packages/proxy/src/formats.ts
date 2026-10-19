@@ -25,7 +25,8 @@ export type ErrorKind =
   | "not_found"
   | "too_large"
   | "unsupported_media_type"
-  | "upstream_unreachable";
+  | "upstream_unreachable"
+  | "upstream_timeout";
 
 const ANTHROPIC_TYPES: Record<ErrorKind, string> = {
   invalid_request: "invalid_request_error",
@@ -35,6 +36,7 @@ const ANTHROPIC_TYPES: Record<ErrorKind, string> = {
   too_large: "request_too_large",
   unsupported_media_type: "invalid_request_error",
   upstream_unreachable: "api_error",
+  upstream_timeout: "timeout_error",
 };
 
 const OPENAI_TYPES: Record<ErrorKind, string> = {
@@ -45,6 +47,7 @@ const OPENAI_TYPES: Record<ErrorKind, string> = {
   too_large: "invalid_request_error",
   unsupported_media_type: "invalid_request_error",
   upstream_unreachable: "server_error",
+  upstream_timeout: "server_error",
 };
 
 /**

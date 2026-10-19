@@ -30,6 +30,8 @@ export interface DecisionLogEntry {
   upstreamMs: number | null;
   /** Set when switchkick answered with its own error instead of OpenRouter's response. */
   error?: string;
+  /** The underlying failure code for upstream errors, e.g. `ECONNREFUSED`. */
+  cause?: string;
   /** Changes switchkick made to the request beyond the model, e.g. `store_rewritten`. */
   warnings?: string[];
 }
