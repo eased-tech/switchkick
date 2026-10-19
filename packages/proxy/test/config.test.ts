@@ -167,6 +167,12 @@ describe("loadConfig", () => {
     await expect(loadConfig(path, {})).rejects.toThrow(`Invalid YAML in ${path}`);
   });
 
+  it("reads hosted model patterns, with a leading * quoted", async () => {
+    const path = join(dir, "hosted.yaml");
+    await writeFile(path, 'mode: hosted\nhosted: { models: [anthropic/*, "*flash*"] }\n');
+    expect((await loadConfig(path, {})).config.hosted.models).toEqual(["anthropic/*", "*flash*"]);
+  });
+
   it("treats an empty file as all defaults", async () => {
     const path = join(dir, "empty.yaml");
     await writeFile(path, "# nothing yet\n");

@@ -109,8 +109,9 @@ hosted:
 > want to rule out in `excluded_models`.
 
 Patterns are exact slugs (`anthropic/claude-sonnet-5.5`, which matches every dated revision),
-dated revisions, case-sensitive wildcards (`anthropic/*`, `*flash*`) or family aliases
-(`~anthropic/claude-opus-latest`). Each list takes up to 1,024 patterns of up to 1,024 characters,
+dated revisions, case-sensitive wildcards (`anthropic/*`, `"*flash*"`) or family aliases
+(`~anthropic/claude-opus-latest`). Quote a pattern that starts with `*`, since YAML otherwise
+reads it as an alias. Each list takes up to 1,024 patterns of up to 1,024 characters,
 and 65,536 characters in total. switchkick checks these limits when it starts.
 
 What switchkick does to each request:
