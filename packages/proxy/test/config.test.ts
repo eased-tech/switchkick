@@ -47,6 +47,7 @@ describe("parseConfig", () => {
         failClosed: false,
         maxSessions: 10_000,
         modelPins: {},
+        slugPins: true,
       },
       jev: {
         model: "typesafe/jev-1.14",

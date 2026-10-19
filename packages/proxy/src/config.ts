@@ -146,9 +146,15 @@ export const ConfigSchema = z
           .default({})
           .describe(
             "Requested models to send to a fixed OpenRouter model instead of routing, e.g. " +
-              '`{ "claude-opus-*": anthropic/claude-opus-5.5 }`. `*` matches anything. A ' +
-              "requested model that is already an OpenRouter slug (contains `/`) is always sent " +
-              "as is.",
+              '`{ "claude-opus-*": anthropic/claude-opus-5.5 }`. `*` matches anything.',
+          ),
+        slugPins: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Send a requested model that is already an OpenRouter slug (contains `/`, e.g. " +
+              "`openai/gpt-5.5`) as is, instead of routing it. Set to false to make `tiers`, " +
+              "`trusted` and `modelPins` the only models local mode can use.",
           ),
       })
       .default({
@@ -160,6 +166,7 @@ export const ConfigSchema = z
         failClosed: DEFAULT_POLICY.failClosed,
         maxSessions: DEFAULT_MAX_SESSIONS,
         modelPins: {},
+        slugPins: true,
       })
       .describe("Local mode routing policy."),
     jev: z

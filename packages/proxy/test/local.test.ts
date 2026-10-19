@@ -386,6 +386,16 @@ describe("local mode", () => {
       expect(jev.calls).toHaveLength(1);
     });
 
+    it("routes OpenRouter slugs too when slugPins is off, so only configured models are used", async () => {
+      const jev = fakeJev("fast");
+      await setup({ jev, slugPins: false, modelPins: { "openai/*": "test/pinned" } });
+      const chat = (model: string) => ({ model, messages: [{ role: "user", content: "hi" }] });
+      expect((await routed("/v1/chat/completions", chat("x-ai/grok-5"))).model).toBe("test/fast");
+      expect((await routed("/v1/chat/completions", chat("openai/gpt-5.5"))).model).toBe(
+        "test/pinned",
+      );
+    });
+
     it("maps requested models through modelPins", async () => {
       const jev = fakeJev("fast");
       const { log } = await setup({

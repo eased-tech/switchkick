@@ -151,7 +151,8 @@
         "idleResetMinutes": 30,
         "failClosed": false,
         "maxSessions": 10000,
-        "modelPins": {}
+        "modelPins": {},
+        "slugPins": true
       },
       "description": "Local mode routing policy.",
       "type": "object",
@@ -231,7 +232,7 @@
         },
         "modelPins": {
           "default": {},
-          "description": "Requested models to send to a fixed OpenRouter model instead of routing, e.g. `{ \"claude-opus-*\": anthropic/claude-opus-5.5 }`. `*` matches anything. A requested model that is already an OpenRouter slug (contains `/`) is always sent as is.",
+          "description": "Requested models to send to a fixed OpenRouter model instead of routing, e.g. `{ \"claude-opus-*\": anthropic/claude-opus-5.5 }`. `*` matches anything.",
           "type": "object",
           "propertyNames": {
             "type": "string",
@@ -241,6 +242,11 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "slugPins": {
+          "default": true,
+          "description": "Send a requested model that is already an OpenRouter slug (contains `/`, e.g. `openai/gpt-5.5`) as is, instead of routing it. Set to false to make `tiers`, `trusted` and `modelPins` the only models local mode can use.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

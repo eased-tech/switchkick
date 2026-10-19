@@ -168,6 +168,7 @@ policy:
   failClosed: false
   maxSessions: 10000
   modelPins: {}
+  slugPins: true
 jev:
   model: typesafe/jev-1.14
   deadlineMs: 1500
@@ -175,14 +176,16 @@ jev:
 ```
 
 Unlike hosted mode, local mode only uses the models in `tiers`, `trusted` and `modelPins`, plus
-any OpenRouter slug a client explicitly asks for (see pinned models below).
+any OpenRouter slug a client explicitly asks for (see pinned models below). For a strict
+allowlist, set `policy.slugPins: false`.
 
 ### How a request is routed
 
 These rules run in order:
 
 1. **Pinned model.** If the request's `model` is an OpenRouter slug (it contains `/`, like
-   `openai/gpt-5.5`), it's sent as is. `policy.modelPins` maps other names, with `*` wildcards,
+   `openai/gpt-5.5`), it's sent as is, unless `policy.slugPins` is `false`. `policy.modelPins`
+   maps requested names to OpenRouter models, with `*` wildcards,
    e.g. `{ "claude-opus-*": anthropic/claude-opus-5.5 }`. Bare names such as `gpt-5` or
    `claude-sonnet-4-5` are what clients send by default, so they are routed, not pinned.
 2. **Tier override.** A tag in the user's message, then the `x-switchkick-tier` header, then

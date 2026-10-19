@@ -254,6 +254,7 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
       tiers,
       trusted,
       modelPins: loaded.config.policy.modelPins,
+      slugPins: loaded.config.policy.slugPins,
       requestChars: jev.requestChars,
       maxSessions: loaded.config.policy.maxSessions,
       onJevError: (failure) => {

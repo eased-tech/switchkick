@@ -25,6 +25,11 @@ export interface LocalRoute {
   trusted: TierTargetConfig;
   /** Requested-model patterns (`*` wildcards) mapped to the OpenRouter model to pin. */
   modelPins?: Record<string, string>;
+  /**
+   * Send a requested OpenRouter slug (a model containing `/`) as is. Defaults to true; false makes
+   * the configured models the only ones local mode uses.
+   */
+  slugPins?: boolean;
   /** Characters of conversation text Jev sees. */
   requestChars?: number;
   maxSessions?: number;
@@ -154,7 +159,7 @@ export function createLocalRouter(options: LocalRoute, envTier: Tier | null = nu
   const pinFor = (requested: unknown): string | null => {
     if (typeof requested !== "string" || requested === "") return null;
     for (const [pattern, model] of pins) if (pattern.test(requested)) return model;
-    return requested.includes("/") ? requested : null;
+    return options.slugPins !== false && requested.includes("/") ? requested : null;
   };
 
   return {
