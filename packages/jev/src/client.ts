@@ -52,6 +52,13 @@ export const MAX_SESSION_ID_CHARS = 256;
 
 const MAX_ERROR_CHARS = 300;
 
+/** `url` without trailing slashes. A loop, not a regex, so a long run of `/` stays linear. */
+function trimSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+}
+
 function errorMessage(text: string, status: number): string {
   try {
     const parsed = JSON.parse(text) as { error?: { message?: unknown } };
@@ -73,7 +80,7 @@ function errorMessage(text: string, status: number): string {
  */
 export function createJevClient(options: JevClientOptions): JevClient {
   const model = options.model ?? DEFAULT_JEV_MODEL;
-  const url = `${(options.baseUrl ?? DEFAULT_DECISIONS_BASE_URL).replace(/\/+$/, "")}/decisions`;
+  const url = `${trimSlashes(options.baseUrl ?? DEFAULT_DECISIONS_BASE_URL)}/decisions`;
   const doFetch = options.fetch ?? fetch;
 
   return {

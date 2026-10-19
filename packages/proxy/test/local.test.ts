@@ -389,6 +389,20 @@ describe("local mode", () => {
     expect(new Set(log.entries.map((e) => e.session)).size).toBe(3);
   });
 
+  it("keeps clients with different API keys in different sessions", async () => {
+    const jev = fakeJev("fast");
+    const { log } = await setup({ jev });
+    const body = { model: "gpt-5", messages: [{ role: "user", content: "hello" }] };
+    await routed("/v1/chat/completions", body, { authorization: "Bearer client-a" });
+    await routed("/v1/chat/completions", body, { authorization: "Bearer client-a" });
+    await routed("/v1/chat/completions", body, { "x-api-key": "client-b" });
+    await eventually(() => expect(log.entries).toHaveLength(3));
+    const [a1, a2, b] = log.entries.map((e) => e.session);
+    expect(a1).toBe(a2);
+    expect(b).not.toBe(a1);
+    expect(JSON.stringify(log.entries)).not.toContain("client-");
+  });
+
   it("uses the x-switchkick-session header as the session key", async () => {
     const jev = fakeJev("frontier");
     await setup({ jev });

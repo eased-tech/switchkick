@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, scrypt } from "node:crypto";
 import {
   type Guard,
   isTier,
@@ -93,6 +93,20 @@ export type LocalResult =
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
+/**
+ * A fingerprint of the client's API key, which tells apart sessions that otherwise hash the same.
+ * The key is a credential, so it goes through scrypt rather than a fast hash. The low cost (about
+ * 2 ms, off the event loop) is enough for a value that is never stored or logged.
+ */
+function fingerprint(credential: string): Promise<string> {
+  if (credential === "") return Promise.resolve("");
+  return new Promise((resolve, reject) => {
+    scrypt(credential, "switchkick/session-key", 16, { N: 1024, r: 8, p: 1 }, (error, key) =>
+      error ? reject(error) : resolve(key.toString("hex")),
+    );
+  });
+}
+
 /** Compiles `*` wildcard patterns, matching the whole requested model name. */
 function compilePins(pins: Record<string, string>): [RegExp, string][] {
   return Object.entries(pins).map(([pattern, model]) => {
@@ -167,11 +181,12 @@ export function createLocalRouter(options: LocalRoute, envTier: Tier | null = nu
     async route({ format, body, header, signal }) {
       const info = analyzeTurn(format, body, header);
       const named = header(SESSION_HEADER)?.trim() || info.clientSession;
-      const credential = header("authorization") ?? header("x-api-key") ?? "";
       const key = sha256(
         named
           ? `named\0${named}`
-          : `derived\0${info.cacheKey ?? ""}\0${info.system}\0${info.firstUser}\0${sha256(credential)}`,
+          : `derived\0${info.cacheKey ?? ""}\0${info.system}\0${info.firstUser}\0${await fingerprint(
+              header("authorization") ?? header("x-api-key") ?? "",
+            )}`,
       );
       const sessionId = key.slice(0, 12);
       // With a named session, the system prompt tells the main conversation from subagents.
