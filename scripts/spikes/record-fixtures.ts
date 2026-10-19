@@ -65,13 +65,16 @@ const paths: Record<Format, string> = {
 /** Response headers worth keeping in fixtures; everything else is dropped. */
 const KEPT_HEADERS = ["content-type", "cache-control", "x-generation-id"];
 
-/** Replace per-request ids so fixtures are stable and carry nothing account-specific. */
+/**
+ * Replace per-request ids, timestamps and the edge region (which hints at the recorder's
+ * location) so fixtures are stable and carry nothing account- or person-specific.
+ */
 function scrub(text: string): string {
   return text
     .replace(/gen-[A-Za-z0-9-]{8,}/g, "gen-REDACTED")
-    .replace(/msg_[A-Za-z0-9]{8,}/g, "msg_REDACTED")
-    .replace(/resp_[A-Za-z0-9]{8,}/g, "resp_REDACTED")
-    .replace(/"created(_at)?":\s*\d+/g, '"created$1":0');
+    .replace(/\b(msg|resp|rs|fc|call|toolu)_(?!REDACTED)[A-Za-z0-9_]{6,}/g, "$1_REDACTED")
+    .replace(/"(created|created_at|completed_at)":\s*\d+/g, '"$1":0')
+    .replace(/"region":\s*"[^"]*"/g, '"region":"REDACTED"');
 }
 
 async function post(path: string, body: unknown, headers: Record<string, string>) {

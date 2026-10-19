@@ -1,0 +1,25 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-generation-id": "gen-REDACTED"
+  },
+  "request": {
+    "model": "typesafe/jev-router",
+    "stream": false,
+    "max_output_tokens": 16,
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": "Reply with exactly: ok"
+      }
+    ],
+    "plugins": [
+      {
+        "id": "jev-router",
+        "cost_tier": "low"
+      }
+    ]
+  }
+}
