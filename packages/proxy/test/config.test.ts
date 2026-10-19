@@ -7,7 +7,9 @@ import {
   DEFAULT_TIER_MODELS,
   loadConfig,
   parseConfig,
+  resolvePolicy,
   resolveTiers,
+  resolveTrusted,
 } from "../src/index.js";
 
 let dir: string;
@@ -36,7 +38,71 @@ describe("parseConfig", () => {
       server: { host: "127.0.0.1", port: 8787, maxBodyBytes: 20 * 1024 ** 2 },
       upstream: { baseUrl: "https://openrouter.ai/api/v1" },
       log: { enabled: true, maxBytes: 50 * 1024 ** 2 },
+      policy: {
+        session: "ratchet",
+        accept: { fast: 0.85, balanced: 0.6, frontier: 0.3 },
+        sensitiveFloor: "balanced",
+        claimGuard: true,
+        idleResetMinutes: 30,
+        failClosed: false,
+        maxSessions: 10_000,
+        modelPins: {},
+      },
+      jev: {
+        model: "typesafe/jev-1.14",
+        baseUrl: "https://openrouter.ai/api/alpha",
+        deadlineMs: 1500,
+        requestChars: 24_000,
+      },
     });
+  });
+
+  it("merges partial local-mode settings with the defaults", () => {
+    const config = parseConfig(
+      {
+        mode: "local",
+        trusted: { model: "anthropic/claude-opus-5.5" },
+        policy: { accept: { fast: 0.95 }, session: "sticky", idleResetMinutes: 5 },
+        jev: { deadlineMs: 900 },
+      },
+      "test",
+    );
+    expect(config.policy.accept).toEqual({ fast: 0.95, balanced: 0.6, frontier: 0.3 });
+    expect(resolvePolicy(config)).toEqual({
+      defaultTier: "balanced",
+      session: "sticky",
+      accept: { fast: 0.95, balanced: 0.6, frontier: 0.3 },
+      sensitiveFloor: "balanced",
+      claimGuard: true,
+      idleResetMs: 5 * 60_000,
+      failClosed: false,
+    });
+    expect(resolveTrusted(config)).toEqual({ model: "anthropic/claude-opus-5.5" });
+    expect(resolveTrusted(parseConfig({}, "test"))).toEqual({
+      model: DEFAULT_TIER_MODELS.balanced,
+    });
+    expect(config.jev).toMatchObject({ deadlineMs: 900, requestChars: 24_000 });
+  });
+
+  it("names invalid local-mode settings by path", () => {
+    const raw = {
+      policy: { accept: { fast: 1.5 }, session: "forever", modelPins: { "claude-*": "" } },
+      jev: { deadlineMs: 10 },
+    };
+    expect(() => parseConfig(raw, "my.yaml")).toThrow(ConfigError);
+    try {
+      parseConfig(raw, "my.yaml");
+    } catch (error) {
+      const message = (error as Error).message;
+      for (const path of [
+        "policy.accept.fast:",
+        "policy.session:",
+        "policy.modelPins.claude-*:",
+        "jev.deadlineMs:",
+      ]) {
+        expect(message).toContain(path);
+      }
+    }
   });
 
   it.each([
@@ -51,7 +117,7 @@ describe("parseConfig", () => {
 
   it("names every invalid field by path", () => {
     const raw = {
-      mode: "local",
+      mode: "smart",
       tiers: { fast: { model: "x", efort: "high" } },
       server: { port: 70000, maxBodyBytes: "lots" },
       extra: 1,

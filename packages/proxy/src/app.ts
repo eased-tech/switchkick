@@ -5,6 +5,7 @@ import { type AccessOptions, access, LOOPBACK_HOSTS, requireJson } from "./acces
 import { type ApiFormat, errorBody, FORMATS, ROUTE_PATHS } from "./formats.js";
 import { type ForwardOptions, forward } from "./forward.js";
 import { JEV_ROUTER_MODEL, validatePlugin } from "./hosted.js";
+import { createLocalRouter, type LocalRoute } from "./local.js";
 import { NO_LOG } from "./log.js";
 import { listModels, modelsFormat, retrieveModel } from "./models.js";
 import { countTokens } from "./tokens.js";
@@ -16,23 +17,31 @@ export const DEFAULT_MAX_BODY_BYTES = 20 * 1024 * 1024;
 
 export interface AppOptions
   extends Pick<ForwardOptions, "apiKey" | "route">,
-    Partial<Omit<ForwardOptions, "apiKey" | "route">>,
+    Partial<Omit<ForwardOptions, "apiKey" | "route" | "local">>,
     Partial<AccessOptions> {
   maxBodyBytes?: number;
+  /** Selects local mode: switchkick asks Jev which tier each human turn needs. */
+  local?: LocalRoute | null;
 }
 
 /**
- * The switchkick HTTP app. Passing `hosted` selects hosted mode, with `route` as the fallback.
- * Throws if the hosted plugin entry is one OpenRouter would reject.
+ * The switchkick HTTP app. Passing `hosted` selects hosted mode, and `local` local mode; `route`
+ * is the static route, and the fallback for both. Throws if the hosted plugin entry is one
+ * OpenRouter would reject.
  */
 export function createApp(options: AppOptions): Hono {
   const hosted = options.hosted
     ? { ...options.hosted, plugin: validatePlugin(options.hosted.plugin) }
     : null;
+  if (hosted && options.local) throw new Error("Choose hosted or local mode, not both.");
+  const envTier = options.envTier ?? null;
+  const local = options.local ? createLocalRouter(options.local, envTier) : null;
   const forwardOptions: ForwardOptions = {
     apiKey: options.apiKey,
     route: options.route,
     hosted,
+    local,
+    envTier,
     upstreamBaseUrl: options.upstreamBaseUrl ?? DEFAULT_UPSTREAM_BASE_URL,
     fetch: options.fetch ?? fetch,
     log: options.log ?? NO_LOG,
@@ -49,8 +58,17 @@ export function createApp(options: AppOptions): Hono {
       onError: (c) =>
         c.json(errorBody(format, "too_large", `The request body exceeds ${maxSize} bytes.`), 413),
     });
-  // Every request goes to this one model, whatever the client asks for.
-  const models = [hosted ? JEV_ROUTER_MODEL : options.route.model];
+  // The models requests can be routed to, whatever the client asks for.
+  const models = hosted
+    ? [JEV_ROUTER_MODEL]
+    : options.local
+      ? [
+          ...new Set([
+            ...Object.values(options.local.tiers).map((t) => t.model),
+            options.local.trusted.model,
+          ]),
+        ]
+      : [options.route.model];
 
   const app = new Hono();
   app.get("/healthz", (c) => c.json({ ok: true, version: VERSION }));

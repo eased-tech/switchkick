@@ -1,16 +1,19 @@
-import type { Tier } from "@switchkick/core";
+import { parseTierTag, type Tier } from "@switchkick/core";
 import type { Context, Handler } from "hono";
 import type { Effort } from "./config.js";
 import { applyEffort } from "./effort.js";
 import { type ApiFormat, type ErrorKind, errorBody, UPSTREAM_PATHS } from "./formats.js";
 import {
+  COST_TIER_FOR,
   type HostedRoute,
   JEV_ROUTER_MODEL,
   prepareHostedBody,
   withoutRouterPlugin,
 } from "./hosted.js";
+import { headerTier, type LocalRouter, TIER_HEADER } from "./local.js";
 import type { DecisionLog, DecisionLogEntry } from "./log.js";
 import { createScanner, routerDecision } from "./metadata.js";
+import { analyzeTurn } from "./turns.js";
 
 /** Where a request goes in static mode: one tier, one model, and optionally an effort. */
 export interface StaticRoute {
@@ -26,6 +29,13 @@ export interface ForwardOptions {
   route: StaticRoute;
   /** Set for hosted mode: OpenRouter's Jev router picks the model. */
   hosted: HostedRoute | null;
+  /** Set for local mode: switchkick asks Jev and applies its own policy. */
+  local: LocalRouter | null;
+  /**
+   * `SWITCHKICK_TIER`: the tier for every request in local mode, or the router's matching
+   * `cost_tier` in hosted mode.
+   */
+  envTier: Tier | null;
   /** e.g. `https://openrouter.ai/api/v1`. */
   upstreamBaseUrl: string;
   fetch: typeof fetch;
@@ -193,13 +203,14 @@ function tap(
  * OpenRouter endpoint, and stream the response back byte for byte.
  *
  * - **Static:** `model` becomes the tier's model, with its effort if set.
+ * - **Local:** the local router picks the tier (or a pinned or trusted model) first; then as static.
  * - **Hosted:** `model` becomes the Jev router, with the plugin entry added. The response is read
  *   on its way through for the router's decision, and the log line is written when it ends. If
  *   the router is unavailable (503), the request is retried once in static mode. Its 400 and 404
  *   errors are rewritten to explain which setting to check.
  */
 export function forward(format: ApiFormat, options: ForwardOptions): Handler {
-  const { route, log, hosted } = options;
+  const { route, log, hosted, local } = options;
   const staticFields = {
     tier: route.tier,
     model: route.model,
@@ -212,7 +223,7 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       ts: new Date().toISOString(),
       format,
       stream: false,
-      mode: hosted ? "hosted" : "static",
+      mode: hosted ? "hosted" : local ? "local" : "static",
       ...(hosted ? { tier: null, model: JEV_ROUTER_MODEL, effort: null } : staticFields),
       requestedModel: null,
       reason: hosted ? "hosted" : "static",
@@ -225,7 +236,7 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
     const write = (fields: Partial<DecisionLogEntry>) =>
       log.write({ ...entry, ...(warnings.length > 0 ? { warnings } : {}), ...fields });
     const fail = (
-      status: 400 | 404 | 502 | 504,
+      status: 400 | 404 | 502 | 503 | 504,
       kind: ErrorKind,
       message: string,
       param?: string,
@@ -265,9 +276,9 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
     }
 
     const client = body;
-    const staticBody = () => {
-      const rewritten = { ...client, model: route.model };
-      if (route.effort) applyEffort(format, rewritten, route.effort);
+    const staticBody = (target: { model: string; effort?: Effort | undefined } = route) => {
+      const rewritten = { ...client, model: target.model };
+      if (target.effort) applyEffort(format, rewritten, target.effort);
       return rewritten;
     };
 
@@ -311,10 +322,29 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
         headers: responseHeaders(upstream),
       });
 
+    let target: { model: string; effort?: Effort | undefined } = route;
+    if (local) {
+      const routed = await local.route({ format, body, header: (n) => c.req.header(n), signal });
+      Object.assign(entry, routed.log);
+      if (!routed.ok) {
+        if (signal.aborted) {
+          write({ status: 499, error: "client_closed" });
+          return new Response(null, { status: 499 });
+        }
+        return fail(
+          503,
+          "jev_unavailable",
+          `Jev couldn't decide how to route this request (${routed.failure.kind}), and ` +
+            "`policy.failClosed` is set in the switchkick config.",
+        );
+      }
+      target = routed;
+    }
+
     if (!hosted) {
       let upstream: Response;
       try {
-        upstream = await call(staticBody(), false);
+        upstream = await call(staticBody(target), false);
       } catch (error) {
         return unreachable(error);
       }
@@ -326,7 +356,23 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       return reply(upstream, upstream.body);
     }
 
-    const prepared = prepareHostedBody(body, hosted);
+    // A tier override picks the router's matching cost tier.
+    const tag = parseTierTag(analyzeTurn(format, body).text ?? "");
+    const fromHeader = headerTier(c.req.header(TIER_HEADER));
+    const override = tag
+      ? { tier: tag.tier, source: "tag" }
+      : fromHeader
+        ? { tier: fromHeader, source: "header" }
+        : options.envTier
+          ? { tier: options.envTier, source: "env" }
+          : null;
+    let hostedRoute = hosted;
+    if (override) {
+      const costTier = COST_TIER_FOR[override.tier];
+      hostedRoute = { ...hosted, plugin: { ...hosted.plugin, cost_tier: costTier } };
+      Object.assign(entry, { costTier, reason: override.source });
+    }
+    const prepared = prepareHostedBody(body, hostedRoute);
     if ("error" in prepared) return fail(400, "invalid_request", prepared.error, prepared.param);
     warnings.push(...prepared.warnings);
 

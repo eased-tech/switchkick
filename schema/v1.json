@@ -8,16 +8,17 @@
     },
     "mode": {
       "default": "static",
-      "description": "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets OpenRouter's Jev router choose the model, configured by `hosted`.",
+      "description": "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets OpenRouter's Jev router choose the model, configured by `hosted`. `local` asks Jev which tier each human turn needs, and applies `policy`.",
       "type": "string",
       "enum": [
         "static",
-        "hosted"
+        "hosted",
+        "local"
       ]
     },
     "defaultTier": {
       "default": "balanced",
-      "description": "Tier used in static mode, and in hosted mode when the router is unavailable (HTTP 503).",
+      "description": "Tier used in static mode, in hosted mode when the router is unavailable (HTTP 503), and in local mode when Jev fails or times out.",
       "type": "string",
       "enum": [
         "fast",
@@ -107,6 +108,178 @@
             "model"
           ],
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "trusted": {
+      "description": "Local mode: the model for every request in a session where a secret (an API key, a private key, a password) was seen. Defaults to { model: anthropic/claude-sonnet-5.5 }.",
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OpenRouter model slug, e.g. anthropic/claude-sonnet-5.5."
+        },
+        "effort": {
+          "description": "Reasoning effort to request. Omit to keep whatever the client sent.",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "policy": {
+      "default": {
+        "session": "ratchet",
+        "accept": {
+          "fast": 0.85,
+          "balanced": 0.6,
+          "frontier": 0.3
+        },
+        "sensitiveFloor": "balanced",
+        "claimGuard": true,
+        "idleResetMinutes": 30,
+        "failClosed": false,
+        "maxSessions": 10000,
+        "modelPins": {}
+      },
+      "description": "Local mode routing policy.",
+      "type": "object",
+      "properties": {
+        "session": {
+          "default": "ratchet",
+          "description": "How a session's tier evolves. `ratchet` decides at every human turn but never goes below the session's tier, which keeps the prompt cache warm. `sticky` decides once per session. `per-request` decides every human turn afresh.",
+          "type": "string",
+          "enum": [
+            "ratchet",
+            "sticky",
+            "per-request"
+          ]
+        },
+        "accept": {
+          "default": {
+            "fast": 0.85,
+            "balanced": 0.6,
+            "frontier": 0.3
+          },
+          "description": "Probability Jev's top tier needs to be accepted. Below it, the more capable of Jev's top two tiers is used. Cheaper tiers should need more confidence.",
+          "type": "object",
+          "properties": {
+            "fast": {
+              "default": 0.85,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "balanced": {
+              "default": 0.6,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "frontier": {
+              "default": 0.3,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "sensitiveFloor": {
+          "default": "balanced",
+          "description": "Lowest tier for requests that touch production, credentials or destructive operations.",
+          "type": "string",
+          "enum": [
+            "fast",
+            "balanced",
+            "frontier"
+          ]
+        },
+        "claimGuard": {
+          "default": true,
+          "description": "Raise the tier one level when a message tries to dictate its own tier or claims prior review.",
+          "type": "boolean"
+        },
+        "idleResetMinutes": {
+          "default": 30,
+          "description": "After this long without requests, a session starts afresh at its next turn.",
+          "type": "number",
+          "minimum": 0
+        },
+        "failClosed": {
+          "default": false,
+          "description": "Answer 503 when Jev fails, instead of falling back to `defaultTier`.",
+          "type": "boolean"
+        },
+        "maxSessions": {
+          "default": 10000,
+          "description": "Sessions kept in memory. The least recently used are forgotten first.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "modelPins": {
+          "default": {},
+          "description": "Requested models to send to a fixed OpenRouter model instead of routing, e.g. `{ \"claude-opus-*\": anthropic/claude-opus-5.5 }`. `*` matches anything. A requested model that is already an OpenRouter slug (contains `/`) is always sent as is.",
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "jev": {
+      "default": {
+        "model": "typesafe/jev-1.14",
+        "baseUrl": "https://openrouter.ai/api/alpha",
+        "deadlineMs": 1500,
+        "requestChars": 24000
+      },
+      "description": "Local mode: how switchkick calls Jev.",
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "typesafe/jev-1.14",
+          "description": "Jev model. Pinned to a version because the thresholds are tuned against it; `~typesafe/jev-latest` follows new releases.",
+          "type": "string",
+          "minLength": 1
+        },
+        "baseUrl": {
+          "default": "https://openrouter.ai/api/alpha",
+          "description": "Base URL of OpenRouter's Decisions API.",
+          "type": "string",
+          "format": "uri"
+        },
+        "deadlineMs": {
+          "default": 1500,
+          "description": "How long to wait for Jev before falling back. Jev's median is about 0.7 s.",
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 60000
+        },
+        "requestChars": {
+          "default": 24000,
+          "description": "Most characters of conversation text sent to Jev. Above about 32,000, Jev switches to a slower, less accurate long-context mode.",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1000000
         }
       },
       "additionalProperties": false

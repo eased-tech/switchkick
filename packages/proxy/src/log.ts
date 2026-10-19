@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import type { Tier } from "@switchkick/core";
 import type { ApiFormat } from "./formats.js";
 import type { CostTier } from "./hosted.js";
+import type { JevLog, LocalLogFields } from "./local.js";
 import type { RouterDecision } from "./metadata.js";
 
 /**
@@ -15,8 +16,8 @@ export interface DecisionLogEntry {
   ts: string;
   format: ApiFormat;
   stream: boolean;
-  mode: "static" | "hosted";
-  /** The tier switchkick routed to. Null in hosted mode, where the router chooses. */
+  mode: "static" | "hosted" | "local";
+  /** The tier switchkick routed to. Null in hosted mode, where the router chooses, and for pins. */
   tier: Tier | null;
   /** The `model` the client asked for, before switchkick rewrote it. */
   requestedModel: string | null;
@@ -48,6 +49,16 @@ export interface DecisionLogEntry {
   router?: RouterDecision | null;
   /** Hosted mode: set when the router was unavailable and the request was retried in static mode. */
   fallback?: "static";
+  /** Local mode: `human`, `inherit`, `subagent` or `side_call`. */
+  turn?: LocalLogFields["turn"];
+  /** Local mode: a short hash identifying the session. */
+  session?: string;
+  /** Local mode: the kind of secret found in the request's message (never the secret itself). */
+  secret?: string;
+  /** Local mode: the session had been idle long enough to start afresh. */
+  idleReset?: true;
+  /** Local mode: Jev's answer or failure. Null when Jev wasn't asked. */
+  jev?: JevLog | null;
 }
 
 export interface DecisionLog {

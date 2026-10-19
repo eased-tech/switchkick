@@ -1,3 +1,5 @@
+import { DEFAULT_POLICY } from "@switchkick/core";
+import { createJevClient } from "@switchkick/jev";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eventually, memoryLog, type ProxyServer, send, startProxy } from "./helpers.js";
 
@@ -158,5 +160,48 @@ describe.skipIf(!apiKey)("live OpenRouter, hosted mode", () => {
     await eventually(() => expect(log.entries).toHaveLength(3));
     expect(resolvedModels()?.[0]).toMatch(/^anthropic\//);
     expect(log.entries.at(-1)?.warnings).toEqual(["reasoning_max_tokens_stripped"]);
+  });
+});
+
+describe.skipIf(!apiKey)("live OpenRouter, local mode", () => {
+  const log = memoryLog();
+  let proxy: ProxyServer;
+  const haiku = { model: "anthropic/claude-haiku-5.5" };
+
+  beforeAll(async () => {
+    proxy = await startProxy({
+      apiKey: apiKey ?? "",
+      route: { tier: "balanced", ...haiku },
+      // Every tier on Haiku keeps the test cheap; the log still shows Jev's choice.
+      local: {
+        jev: createJevClient({ apiKey: apiKey ?? "" }),
+        policy: DEFAULT_POLICY,
+        tiers: { fast: haiku, balanced: haiku, frontier: haiku },
+        trusted: haiku,
+      },
+      log,
+    });
+  });
+
+  afterAll(() => proxy.close());
+
+  it("asks Jev once per human turn and logs its answer", { timeout: 30_000 }, async () => {
+    const messages: unknown[] = [{ role: "user", content: PROMPT }];
+    const res = await send(`${proxy.url}/v1/chat/completions`, {
+      body: JSON.stringify({ model: "gpt-5", max_tokens: 256, messages }),
+    });
+    expect(res.status).toBe(200);
+    await eventually(() => expect(log.entries).toHaveLength(1));
+    const entry = log.entries[0];
+    expect(entry).toMatchObject({
+      mode: "local",
+      reason: expect.stringMatching(/^(jev|fail_open)$/),
+    });
+    // A timeout is possible on a slow network; anything else means the wire format drifted.
+    if (entry?.reason === "jev") {
+      expect(entry.jev).toMatchObject({ model: expect.stringMatching(/^typesafe\/jev-1\.14/) });
+    } else {
+      expect(entry?.jev).toMatchObject({ error: "timeout" });
+    }
   });
 });
