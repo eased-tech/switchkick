@@ -51,10 +51,17 @@ function reject(
   return c.json(errorBody(format, kind, msg), status);
 }
 
-/** Checks who may call the proxy, before any body is read. */
-export function access(format: ApiFormat, options: AccessOptions): MiddlewareHandler {
+/** The error envelope to answer in: fixed per route, or chosen from the request. */
+export type FormatOf = ApiFormat | ((c: Context) => ApiFormat);
+
+/**
+ * Checks who may call the proxy: the token when one is set, otherwise the Host header. Runs on
+ * every route, before any body is read.
+ */
+export function access(formatOf: FormatOf, options: AccessOptions): MiddlewareHandler {
   const expected = options.token === null ? null : digest(options.token);
   return async (c, next) => {
+    const format = typeof formatOf === "function" ? formatOf(c) : formatOf;
     if (expected !== null) {
       const token = presentedToken(c);
       // Compare fixed-length digests so the check takes the same time for any input.
@@ -67,8 +74,16 @@ export function access(format: ApiFormat, options: AccessOptions): MiddlewareHan
         return reject(c, format, 403, "permission", `Host "${host}" is not allowed.`);
       }
     }
-    // Requiring JSON also means a cross-site page can't send a request without a CORS
-    // preflight, which switchkick never answers.
+    await next();
+  };
+}
+
+/**
+ * Requires a JSON body on POST routes. This also means a cross-site page can't send a request
+ * without a CORS preflight, which switchkick never answers.
+ */
+export function requireJson(format: ApiFormat): MiddlewareHandler {
+  return async (c, next) => {
     const mediaType = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase();
     if (mediaType !== "application/json") {
       return reject(

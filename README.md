@@ -41,6 +41,15 @@ Then point a client at `http://127.0.0.1:8787`:
 | OpenAI Responses | `POST /v1/responses` | `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` |
 | Anthropic Messages | `POST /v1/messages` | `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` |
 
+switchkick also answers two endpoints itself:
+
+- `GET /v1/models` lists the model requests are routed to, in OpenAI's shape, or in Anthropic's
+  when the request has an `anthropic-version` header. `GET /v1/models/{id}` retrieves it.
+- `POST /v1/messages/count_tokens` returns an **estimate**, because OpenRouter has no
+  token-counting endpoint. It's tuned to overcount, typically by 10–40%, so a client tracking its
+  context window compacts a little early rather than overflowing. The response carries
+  `x-switchkick-token-estimate: true`.
+
 The client's API key is ignored; switchkick sends its own OpenRouter key upstream. In
 static mode the request's `model` is replaced with the tier's model:
 

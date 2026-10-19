@@ -62,8 +62,28 @@ describe.skipIf(!apiKey)("live OpenRouter", () => {
     expect(res.body.toString("utf8")).toContain('"type":"response.completed"');
   });
 
+  it("estimates at least as many input tokens as OpenRouter bills", {
+    timeout: 30_000,
+  }, async () => {
+    // Mixed prose and code, like a coding agent's context.
+    const content = `${"Refactor this function so it handles empty input. ".repeat(20)}
+function parse(input) {
+  return input.split(",").map((part) => part.trim()).filter(Boolean);
+}
+${"const value = compute(items[index], options?.flag ?? false);\n".repeat(30)}`;
+    const body = { max_tokens: 2048, messages: [{ role: "user", content }] };
+    const estimate = await send(`${proxy.url}/v1/messages/count_tokens`, {
+      body: JSON.stringify(body),
+    });
+    const real = await send(`${proxy.url}/v1/messages`, { body: JSON.stringify(body) });
+    const estimated = (estimate.json() as { input_tokens: number }).input_tokens;
+    const billed = (real.json() as { usage: { input_tokens: number } }).usage.input_tokens;
+    expect(estimated).toBeGreaterThanOrEqual(billed);
+    expect(estimated).toBeLessThan(billed * 2);
+  });
+
   it("logs a generation id for each call", () => {
-    expect(log.entries).toHaveLength(3);
+    expect(log.entries).toHaveLength(4);
     for (const entry of log.entries) expect(entry.generationId).toMatch(/^gen-/);
   });
 });

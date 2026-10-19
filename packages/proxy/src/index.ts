@@ -44,3 +44,4 @@ export {
 } from "./log.js";
 export { type RunIo, type RunResult, resolveSettings, run, type ServeSettings } from "./run.js";
 export { DEFAULT_TIER_MODELS } from "./tiers.js";
+export { estimateInputTokens } from "./tokens.js";
