@@ -6,6 +6,7 @@ import { SessionStore, TIERS, type Tier } from "@switchkick/core";
 import { createJevClient, type DecideFailure } from "@switchkick/jev";
 import { isLoopback, LOOPBACK_HOSTS } from "./access.js";
 import { createApp, VERSION } from "./app.js";
+import { CommandError, type CommandIo } from "./command.js";
 import {
   type Config,
   ConfigError,
@@ -14,6 +15,7 @@ import {
   loadConfig,
   MODES,
   type Mode,
+  resolveHosted,
   resolvePolicy,
   resolveTiers,
   resolveTrusted,
@@ -25,20 +27,42 @@ import {
   type FoundKey,
   findApiKey,
 } from "./credentials.js";
+import { doctorCommand } from "./doctor.js";
+import { envCommand } from "./env.js";
+import { evalCommand } from "./eval.js";
 import { ATTRIBUTION } from "./forward.js";
 import { COST_TIER_FOR, JEV_ROUTER_MODEL, jevRouterPlugin } from "./hosted.js";
 import type { LocalRoute } from "./local.js";
 import { createFileLog, type DecisionLog, defaultLogPath, NO_LOG } from "./log.js";
+import { reportCommand } from "./report.js";
 import { defaultSessionsPath, type PersistedSessions, persistSessions } from "./sessions.js";
+import { setupCommand } from "./setup.js";
+import { defaultSystem, type System } from "./system.js";
+import { uninstallCommand } from "./uninstall.js";
 
-const HELP = `switchkick ${VERSION}
+const HELP = `switchkick ${VERSION}: routes OpenAI and Anthropic API requests through OpenRouter,
+using Jev to pick the model for each turn.
 
-Usage:
-  switchkick serve [options]
-  switchkick --version
-  switchkick --help
+Usage: switchkick <command> [options]
 
-Serve options (each overrides the config file):
+Commands:
+  serve       Run the proxy in the foreground.
+  setup       Store the OpenRouter key, write a config, install a background service, and point
+              Codex, Claude Code or OpenAI SDK apps at switchkick.
+  doctor      Check the config, key, service, client settings and proxy. --live also makes one
+              Jev call and one tiny model call.
+  uninstall   Remove the service and restore the client settings setup changed.
+  report      Summarize the decision log: requests per tier and model, spend, Jev latency.
+  eval        Run labelled prompts through Jev and compare its tiers with the labels.
+  env         Print the environment for pointing one shell's client at switchkick.
+
+Run \`switchkick <command> --help\` for a command's options.
+  --version   Print the version.
+`;
+
+const SERVE_HELP = `Usage: switchkick serve [options]
+
+Options (each overrides the config file):
   --config <path>     Config file (default ${configDir()}/config.yaml if it exists)
   --host <addr>       Address to listen on (default 127.0.0.1)
   --port <n>          Port to listen on (default 8787)
@@ -56,6 +80,7 @@ API key, the first found wins:
        Linux:  secret-tool store --label=switchkick service switchkick account openrouter
   3. ${envFilePath()}, a file with an OPENROUTER_API_KEY=... line. It must be
      readable only by you (chmod 600).
+  \`switchkick setup\` stores the key for you.
 
 Environment:
   SWITCHKICK_CONFIG   Config file, if --config isn't given.
@@ -75,6 +100,11 @@ export interface RunIo {
   env: NodeJS.ProcessEnv;
   /** Finds the OpenRouter key. Defaults to the real environment, credential store and env file. */
   findApiKey?: (env: NodeJS.ProcessEnv) => Promise<FoundKey>;
+  /**
+   * The machine outside the config and state directories: commands, the terminal, the network.
+   * Defaults to the real one; tests pass a stand-in.
+   */
+  system?: System;
   stdout(text: string): void;
   stderr(text: string): void;
 }
@@ -187,6 +217,17 @@ async function listen(server: Server, host: string, port: number): Promise<Addre
   });
 }
 
+type Command = (argv: string[], io: CommandIo) => Promise<number>;
+
+const COMMANDS: Record<string, Command> = {
+  setup: setupCommand,
+  doctor: doctorCommand,
+  uninstall: uninstallCommand,
+  report: reportCommand,
+  eval: evalCommand,
+  env: envCommand,
+};
+
 /** The `switchkick` command line. `cli.ts` calls this with the real process. */
 export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   const fail = (message: string): RunResult => {
@@ -194,23 +235,51 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
     return { exitCode: 1 };
   };
 
+  const [command, ...rest] = argv;
+  if (command === undefined || command === "--help" || command === "-h" || command === "help") {
+    io.stdout(HELP);
+    return { exitCode: 0 };
+  }
+  if (command === "--version" || command === "-v") {
+    io.stdout(`${VERSION}\n`);
+    return { exitCode: 0 };
+  }
+  if (command === "serve") return serve(rest, io, fail);
+  const handler = COMMANDS[command];
+  if (!handler) return fail(`unknown command: ${command}\n\n${HELP}`);
+  const commandIo: CommandIo = {
+    env: io.env,
+    stdout: io.stdout,
+    stderr: io.stderr,
+    system: io.system ?? defaultSystem(io.env),
+    findApiKey: io.findApiKey ?? ((env) => findApiKey(defaultCredentialDeps(env))),
+  };
+  try {
+    return { exitCode: await handler(rest, commandIo) };
+  } catch (error) {
+    if (error instanceof CommandError) return fail(error.message);
+    throw error;
+  }
+}
+
+async function serve(
+  argv: string[],
+  io: RunIo,
+  fail: (message: string) => RunResult,
+): Promise<RunResult> {
   let parsed: ReturnType<typeof parse>;
   try {
     parsed = parse(argv);
   } catch (error) {
-    return fail(`${(error as Error).message}\n\n${HELP}`);
+    return fail(`${(error as Error).message}\n\n${SERVE_HELP}`);
   }
   const { values, positionals } = parsed;
-  if (values.version) {
-    io.stdout(`${VERSION}\n`);
+  if (values.help) {
+    io.stdout(SERVE_HELP);
     return { exitCode: 0 };
   }
-  const [command] = positionals;
-  if (values.help || command === undefined) {
-    io.stdout(HELP);
-    return { exitCode: 0 };
-  }
-  if (command !== "serve") return fail(`unknown command: ${command}\n\n${HELP}`);
+  if (positionals.length > 0)
+    return fail(`unexpected argument: ${positionals[0]}\n\n${SERVE_HELP}`);
 
   let loaded: Awaited<ReturnType<typeof loadConfig>>;
   try {
@@ -246,7 +315,8 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
 
   const tiers = resolveTiers(loaded.config);
   const target = tiers[settings.tier];
-  const { hosted, jev } = loaded.config;
+  const { jev } = loaded.config;
+  const hosted = resolveHosted(loaded.config);
   const trusted = resolveTrusted(loaded.config);
   let local: LocalRoute | null = null;
   let persisted: PersistedSessions | null = null;
@@ -341,7 +411,8 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   }
   io.stderr(
     `switchkick listening on http://${host}:${address.port}\n` +
-      `  config: ${loaded.path ?? "built-in defaults"}\n` +
+      `  config: ${loaded.path ?? "built-in defaults"}` +
+      `${loaded.config.preset ? ` (preset ${loaded.config.preset})` : ""}\n` +
       `  key:    from ${found.source}\n` +
       `  route:  ${route}\n` +
       sessionsLine,
@@ -381,7 +452,6 @@ function parse(argv: string[]) {
       "log-file": { type: "string" },
       log: { type: "boolean" },
       attribution: { type: "boolean" },
-      version: { type: "boolean", short: "v" },
       help: { type: "boolean", short: "h" },
     },
   });

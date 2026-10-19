@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ConfigError,
   DEFAULT_TIER_MODELS,
+  jevRouterPlugin,
   loadConfig,
   parseConfig,
+  resolveHosted,
   resolvePolicy,
   resolveTiers,
   resolveTrusted,
@@ -28,12 +30,7 @@ describe("parseConfig", () => {
       mode: "static",
       defaultTier: "balanced",
       tiers: {},
-      hosted: {
-        cost_tier: "medium",
-        models: [],
-        excluded_models: [],
-        unsupportedReasoning: "strip",
-      },
+      hosted: { cost_tier: "medium", unsupportedReasoning: "strip" },
       attribution: true,
       server: { host: "127.0.0.1", port: 8787, maxBodyBytes: 20 * 1024 ** 2 },
       upstream: { baseUrl: "https://openrouter.ai/api/v1" },
@@ -194,6 +191,40 @@ describe("resolveTiers", () => {
       balanced: { model: DEFAULT_TIER_MODELS.balanced },
       frontier: { model: "openai/gpt-5.5", effort: "xhigh" },
     });
+  });
+});
+
+describe("presets", () => {
+  it("supply tiers, trusted and hosted lists, which the file's settings override", () => {
+    const config = parseConfig(
+      { preset: "multi-provider", tiers: { fast: { model: "x/fast" } }, hosted: { models: [] } },
+      "t",
+    );
+    expect(resolveTiers(config)).toEqual({
+      fast: { model: "x/fast" },
+      balanced: { model: "openai/gpt-6.1-sol" },
+      frontier: { model: "anthropic/claude-opus-5.5" },
+    });
+    expect(resolveTrusted(config)).toEqual({ model: "anthropic/claude-sonnet-5.5" });
+    expect(resolveHosted(config)).toMatchObject({ models: [], excluded_models: [] });
+  });
+
+  it("keep hosted mode on Anthropic models with claude-only", () => {
+    const hosted = resolveHosted(parseConfig({ preset: "claude-only" }, "t"));
+    expect(hosted.models).toEqual(["anthropic/*"]);
+    expect(hosted.excluded_models).toContain("openai/*");
+    expect(hosted.excluded_models).not.toContain("anthropic/*");
+    expect(hosted.excluded_models).not.toContain("typesafe/*");
+    // Within the router's limits.
+    expect(() => jevRouterPlugin({ cost_tier: "low", ...hosted })).not.toThrow();
+  });
+
+  it("leave hosted mode unrestricted without a preset", () => {
+    expect(resolveHosted(parseConfig({}, "t"))).toMatchObject({ models: [], excluded_models: [] });
+  });
+
+  it("rejects an unknown preset", () => {
+    expect(() => parseConfig({ preset: "openai-only" }, "t")).toThrow(/preset/);
   });
 });
 

@@ -203,6 +203,9 @@ importers:
       hono:
         specifier: ^4.13.13
         version: 4.13.13
+      smol-toml:
+        specifier: ^1.9.1
+        version: 1.9.1
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -1096,6 +1099,10 @@ packages:
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
     hasBin: true
 
+  smol-toml@1.9.1:
+    resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
+    engines: {node: '>= 18'}
+
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -1857,6 +1864,8 @@ snapshots:
       '@rollup/rollup-win32-x64-gnu': 4.64.9
       '@rollup/rollup-win32-x64-msvc': 4.64.9
       fsevents: 2.3.3
+
+  smol-toml@1.9.1: {}
 
   source-map-js@1.2.2: {}
 
