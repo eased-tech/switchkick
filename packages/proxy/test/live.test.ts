@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { memoryLog, type ProxyServer, send, startProxy } from "./helpers.js";
+import { eventually, memoryLog, type ProxyServer, send, startProxy } from "./helpers.js";
 
 // Calls the real OpenRouter API through the proxy. Skipped unless OPENROUTER_API_KEY is set; each
 // run costs a fraction of a cent.
@@ -85,5 +85,78 @@ ${"const value = compute(items[index], options?.flag ?? false);\n".repeat(30)}`;
   it("logs a generation id for each call", () => {
     expect(log.entries).toHaveLength(4);
     for (const entry of log.entries) expect(entry.generationId).toMatch(/^gen-/);
+  });
+});
+
+describe.skipIf(!apiKey)("live OpenRouter, hosted mode", () => {
+  const log = memoryLog();
+  let proxy: ProxyServer;
+
+  beforeAll(async () => {
+    proxy = await startProxy({
+      apiKey: apiKey ?? "",
+      route: { tier: "fast", model: "anthropic/claude-haiku-5.5" },
+      hosted: {
+        plugin: { id: "jev-router", cost_tier: "low", models: ["anthropic/*"] },
+      },
+      log,
+    });
+  });
+
+  afterAll(() => proxy.close());
+
+  const resolvedModels = () => {
+    const entry = log.entries.at(-1);
+    expect(entry).toMatchObject({ mode: "hosted", status: 200 });
+    expect(entry?.servedModel).toMatch(/^anthropic\//);
+    return entry?.router?.resolvedModels;
+  };
+
+  it("logs the router's resolved models for a Chat Completions stream", {
+    timeout: 30_000,
+  }, async () => {
+    const res = await send(`${proxy.url}/v1/chat/completions`, {
+      body: JSON.stringify({
+        stream: true,
+        max_tokens: 256,
+        messages: [{ role: "user", content: PROMPT }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await eventually(() => expect(log.entries).toHaveLength(1));
+    expect(resolvedModels()?.[0]).toMatch(/^anthropic\//);
+  });
+
+  it("logs them for Messages with a thinking budget, as Claude Code sends", {
+    timeout: 30_000,
+  }, async () => {
+    const res = await send(`${proxy.url}/v1/messages`, {
+      headers: { "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        max_tokens: 2048,
+        thinking: { type: "enabled", budget_tokens: 1024 },
+        messages: [{ role: "user", content: PROMPT }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await eventually(() => expect(log.entries).toHaveLength(2));
+    expect(resolvedModels()?.[0]).toMatch(/^anthropic\//);
+  });
+
+  it("logs them for a Responses stream, from response.completed", {
+    timeout: 30_000,
+  }, async () => {
+    const res = await send(`${proxy.url}/v1/responses`, {
+      body: JSON.stringify({
+        stream: true,
+        max_output_tokens: 256,
+        reasoning: { effort: "low", max_tokens: 128 },
+        input: [{ type: "message", role: "user", content: PROMPT }],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await eventually(() => expect(log.entries).toHaveLength(3));
+    expect(resolvedModels()?.[0]).toMatch(/^anthropic\//);
+    expect(log.entries.at(-1)?.warnings).toEqual(["reasoning_max_tokens_stripped"]);
   });
 });

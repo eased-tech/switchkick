@@ -72,6 +72,32 @@ describe("switchkick serve", () => {
     expect(await routedModel(url)).toBe("anthropic/claude-haiku-5.5");
   });
 
+  it("routes through the Jev router in hosted mode, with the config's plugin settings", async () => {
+    const { exitCode, url } = await serve(
+      "mode: hosted\nhosted: { cost_tier: high, excluded_models: [openai/*] }\n",
+    );
+    expect(exitCode).toBe(0);
+    await send(`${url}/v1/chat/completions`, { body: '{"model":"client"}' });
+    const sent = JSON.parse(upstream.requests[0]?.body ?? "{}");
+    expect(sent.model).toBe("typesafe/jev-router");
+    expect(sent.plugins).toEqual([
+      { id: "jev-router", cost_tier: "high", excluded_models: ["openai/*"] },
+    ]);
+    expect(stderr).toContain("hosted, typesafe/jev-router at cost_tier high");
+    expect(stderr).toContain("fallback: static, balanced → anthropic/claude-sonnet-5.5");
+  });
+
+  it("lets --mode override the config file", async () => {
+    const { url } = await serve("mode: hosted\n", ["--mode", "static"]);
+    expect(await routedModel(url)).toBe("anthropic/claude-sonnet-5.5");
+  });
+
+  it("rejects an unknown --mode", async () => {
+    const { exitCode } = await serve("", ["--mode", "local"]);
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain('--mode must be one of static, hosted, got "local"');
+  });
+
   it("refuses a non-loopback host from the config file without a token", async () => {
     const { exitCode, server } = await serve("server: { host: 0.0.0.0 }\n");
     expect(exitCode).toBe(1);

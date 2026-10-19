@@ -17,6 +17,8 @@ export {
   type Effort,
   type LoadedConfig,
   loadConfig,
+  MODES,
+  type Mode,
   parseConfig,
   resolveTiers,
 } from "./config.js";
@@ -34,6 +36,19 @@ export {
 export { type ApiFormat, errorBody, FORMATS, ROUTE_PATHS } from "./formats.js";
 export { ATTRIBUTION, type StaticRoute } from "./forward.js";
 export {
+  COST_TIERS,
+  type CostTier,
+  type HostedRoute,
+  JEV_ROUTER_MODEL,
+  type JevRouterPlugin,
+  JevRouterPluginSchema,
+  jevRouterPlugin,
+  prepareHostedBody,
+  UNSUPPORTED_REASONING,
+  type UnsupportedReasoning,
+  validatePlugin,
+} from "./hosted.js";
+export {
   createFileLog,
   DEFAULT_LOG_MAX_BYTES,
   type DecisionLog,
@@ -42,6 +57,13 @@ export {
   type FileLog,
   NO_LOG,
 } from "./log.js";
+export {
+  createScanner,
+  type RouterCandidate,
+  type RouterDecision,
+  routerDecision,
+  type ScanResult,
+} from "./metadata.js";
 export { type RunIo, type RunResult, resolveSettings, run, type ServeSettings } from "./run.js";
 export { DEFAULT_TIER_MODELS } from "./tiers.js";
 export { estimateInputTokens } from "./tokens.js";

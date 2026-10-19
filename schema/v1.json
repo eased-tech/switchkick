@@ -8,13 +8,16 @@
     },
     "mode": {
       "default": "static",
-      "description": "How requests are routed. `static` sends every request to `defaultTier`.",
+      "description": "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets OpenRouter's Jev router choose the model, configured by `hosted`.",
       "type": "string",
-      "const": "static"
+      "enum": [
+        "static",
+        "hosted"
+      ]
     },
     "defaultTier": {
       "default": "balanced",
-      "description": "Tier used in static mode.",
+      "description": "Tier used in static mode, and in hosted mode when the router is unavailable (HTTP 503).",
       "type": "string",
       "enum": [
         "fast",
@@ -104,6 +107,60 @@
             "model"
           ],
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "hosted": {
+      "default": {
+        "cost_tier": "medium",
+        "models": [],
+        "excluded_models": [],
+        "unsupportedReasoning": "strip"
+      },
+      "description": "Hosted mode settings.",
+      "type": "object",
+      "properties": {
+        "cost_tier": {
+          "default": "medium",
+          "description": "The router's spend policy. Higher tiers pick more capable, costlier models.",
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "models": {
+          "default": [],
+          "description": "Models the router should prefer: slugs, wildcards such as `anthropic/*`, or `~author/family-latest` aliases. A preference only: if none of them is in the router's pool, the router ignores the list. Use local mode for a strict allowlist.",
+          "maxItems": 1024,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "excluded_models": {
+          "default": [],
+          "description": "Models the router must never pick, in the same pattern syntax. The only hard restriction: if it excludes every candidate, requests fail with 404.",
+          "maxItems": 1024,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        },
+        "unsupportedReasoning": {
+          "default": "strip",
+          "description": "What to do with `reasoning.max_tokens` and `reasoning.mode: \"pro\"`, which the router rejects: `strip` drops them and notes it in the log, `reject` answers 400.",
+          "type": "string",
+          "enum": [
+            "strip",
+            "reject"
+          ]
         }
       },
       "additionalProperties": false

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { TIERS, type Tier } from "@switchkick/core";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import { COST_TIERS, ModelPatterns, UNSUPPORTED_REASONING } from "./hosted.js";
 import { DEFAULT_TIER_MODELS } from "./tiers.js";
 
 export const CONFIG_SCHEMA_URL = "https://eased-tech.github.io/switchkick/schema/v1.json";
@@ -14,6 +15,10 @@ export const CONFIG_SCHEMA_URL = "https://eased-tech.github.io/switchkick/schema
  */
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
+
+/** Routing modes. `local` arrives with the Jev client. */
+export const MODES = ["static", "hosted"] as const;
+export type Mode = (typeof MODES)[number];
 
 const UNITS: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
 
@@ -48,14 +53,52 @@ export const ConfigSchema = z
   .strictObject({
     $schema: z.string().optional().describe("JSON Schema URL, for editor support."),
     mode: z
-      .literal("static")
+      .enum(MODES)
       .default("static")
-      .describe("How requests are routed. `static` sends every request to `defaultTier`."),
-    defaultTier: z.enum(TIERS).default("balanced").describe("Tier used in static mode."),
+      .describe(
+        "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets " +
+          "OpenRouter's Jev router choose the model, configured by `hosted`.",
+      ),
+    defaultTier: z
+      .enum(TIERS)
+      .default("balanced")
+      .describe(
+        "Tier used in static mode, and in hosted mode when the router is unavailable (HTTP 503).",
+      ),
     tiers: z
       .strictObject(tierTargets)
       .default({})
       .describe("Model per tier. A tier given here replaces the built-in one entirely."),
+    hosted: z
+      .strictObject({
+        cost_tier: z
+          .enum(COST_TIERS)
+          .default("medium")
+          .describe("The router's spend policy. Higher tiers pick more capable, costlier models."),
+        models: ModelPatterns.default([]).describe(
+          "Models the router should prefer: slugs, wildcards such as `anthropic/*`, or " +
+            "`~author/family-latest` aliases. A preference only: if none of them is in the " +
+            "router's pool, the router ignores the list. Use local mode for a strict allowlist.",
+        ),
+        excluded_models: ModelPatterns.default([]).describe(
+          "Models the router must never pick, in the same pattern syntax. The only hard " +
+            "restriction: if it excludes every candidate, requests fail with 404.",
+        ),
+        unsupportedReasoning: z
+          .enum(UNSUPPORTED_REASONING)
+          .default("strip")
+          .describe(
+            'What to do with `reasoning.max_tokens` and `reasoning.mode: "pro"`, which the ' +
+              "router rejects: `strip` drops them and notes it in the log, `reject` answers 400.",
+          ),
+      })
+      .default({
+        cost_tier: "medium",
+        models: [],
+        excluded_models: [],
+        unsupportedReasoning: "strip",
+      })
+      .describe("Hosted mode settings."),
     attribution: z
       .boolean()
       .default(true)

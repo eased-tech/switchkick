@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Tier } from "@switchkick/core";
 import type { ApiFormat } from "./formats.js";
+import type { CostTier } from "./hosted.js";
+import type { RouterDecision } from "./metadata.js";
 
 /**
  * One line of the decision log, written per request. It records how the request was routed and
@@ -13,11 +15,12 @@ export interface DecisionLogEntry {
   ts: string;
   format: ApiFormat;
   stream: boolean;
-  mode: "static";
-  tier: Tier;
+  mode: "static" | "hosted";
+  /** The tier switchkick routed to. Null in hosted mode, where the router chooses. */
+  tier: Tier | null;
   /** The `model` the client asked for, before switchkick rewrote it. */
   requestedModel: string | null;
-  /** The model switchkick sent upstream. */
+  /** The model switchkick sent upstream: `typesafe/jev-router` in hosted mode. */
   model: string;
   /** The reasoning effort switchkick set, or null if the client's was left alone. */
   effort: string | null;
@@ -34,6 +37,17 @@ export interface DecisionLogEntry {
   cause?: string;
   /** Changes switchkick made to the request beyond the model, e.g. `store_rewritten`. */
   warnings?: string[];
+  /** Hosted mode: the router's cost tier. */
+  costTier?: CostTier;
+  /**
+   * Hosted mode: the `model` OpenRouter's response names, i.e. the model that served the request.
+   * Null when the response didn't say, e.g. an error.
+   */
+  servedModel?: string | null;
+  /** Hosted mode: what the router reported. Null on cache hits, errors and fallbacks. */
+  router?: RouterDecision | null;
+  /** Hosted mode: set when the router was unavailable and the request was retried in static mode. */
+  fallback?: "static";
 }
 
 export interface DecisionLog {
