@@ -106,7 +106,9 @@ describe("switchkick serve", () => {
     expect(exitCode).toBe(0);
     const body = JSON.stringify({ model: "gpt-5", messages: [{ role: "user", content: "hi" }] });
     await send(`${url}/v1/chat/completions`, { body });
-    const [decision, call] = upstream.requests;
+    const [warm, decision, call] = upstream.requests;
+    expect(warm).toMatchObject({ method: "HEAD", url: "/api/v1/decisions" });
+    expect(warm?.headers.authorization).toBeUndefined();
     expect(decision?.url).toBe("/api/v1/decisions");
     expect(JSON.parse(decision?.body ?? "{}").model).toBe("test/jev");
     expect(decision?.headers["x-openrouter-title"]).toBe("switchkick");
@@ -115,8 +117,43 @@ describe("switchkick serve", () => {
     expect(stderr).toContain("trusted → test/trusted");
   });
 
+  it("restores local-mode sessions after a restart", async () => {
+    const yaml = `mode: local\njev: { baseUrl: "${upstream.baseUrl}" }\n`;
+    const human = { role: "user", content: "plan the migration" };
+    const chat = (messages: unknown[]) =>
+      send(`${url}/v1/chat/completions`, { body: JSON.stringify({ model: "gpt-5", messages }) });
+    let { url, close } = await serve(yaml);
+    await chat([human]);
+    await close?.();
+
+    ({ url, close } = await serve(yaml));
+    expect(stderr).toContain(`sessions: ${join(dir, "switchkick", "sessions.json")} (1 restored)`);
+    const before = upstream.requests.length;
+    // A tool step after the restart inherits frontier instead of asking Jev again.
+    await chat([
+      human,
+      { role: "assistant", tool_calls: [{ id: "c1" }] },
+      { role: "tool", content: "ok" },
+    ]);
+    const sent = upstream.requests.slice(before).filter((r) => r.method === "POST");
+    expect(sent.map((r) => r.url)).toEqual(["/api/v1/chat/completions"]);
+    expect(JSON.parse(sent[0]?.body ?? "{}").model).toBe("anthropic/claude-opus-5.5");
+    await close?.();
+  });
+
+  it("doesn't save sessions when persistSessions is off", async () => {
+    const yaml = `mode: local\njev: { baseUrl: "${upstream.baseUrl}" }\npolicy: { persistSessions: false }\n`;
+    const { url, close } = await serve(yaml);
+    await send(`${url}/v1/responses`, { body: '{"input":"hi"}' });
+    await close?.();
+    expect(stderr).not.toContain("sessions:");
+    await expect(readFile(join(dir, "switchkick", "sessions.json"))).rejects.toThrow();
+  });
+
   it("routes every request at SWITCHKICK_TIER in local mode, without asking Jev", async () => {
-    const { url } = await serve("mode: local\n", [], { SWITCHKICK_TIER: "fast" });
+    const { url } = await serve(`mode: local\njev: { baseUrl: "${upstream.baseUrl}" }\n`, [], {
+      SWITCHKICK_TIER: "fast",
+    });
     expect(await routedModel(url)).toBe("anthropic/claude-haiku-5.5");
     expect(upstream.requests).toHaveLength(1);
     expect(stderr).toContain("every request at fast (SWITCHKICK_TIER=fast)");

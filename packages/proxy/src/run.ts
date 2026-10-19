@@ -2,7 +2,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { parseArgs } from "node:util";
 import { createAdaptorServer } from "@hono/node-server";
-import { TIERS, type Tier } from "@switchkick/core";
+import { SessionStore, TIERS, type Tier } from "@switchkick/core";
 import { createJevClient, type DecideFailure } from "@switchkick/jev";
 import { isLoopback, LOOPBACK_HOSTS } from "./access.js";
 import { createApp, VERSION } from "./app.js";
@@ -29,6 +29,7 @@ import { ATTRIBUTION } from "./forward.js";
 import { COST_TIER_FOR, JEV_ROUTER_MODEL, jevRouterPlugin } from "./hosted.js";
 import type { LocalRoute } from "./local.js";
 import { createFileLog, type DecisionLog, defaultLogPath, NO_LOG } from "./log.js";
+import { defaultSessionsPath, type PersistedSessions, persistSessions } from "./sessions.js";
 
 const HELP = `switchkick ${VERSION}
 
@@ -80,8 +81,13 @@ export interface RunIo {
 
 export interface RunResult {
   exitCode: number;
-  /** The listening server, for `serve`. Close it to stop. */
+  /** The listening server, for `serve`. */
   server?: Server;
+  /**
+   * Stops `serve`: stops accepting connections, then saves sessions and flushes the decision log.
+   * Requests still streaming are not waited for.
+   */
+  close?: () => Promise<void>;
 }
 
 interface ServeFlags {
@@ -225,14 +231,17 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   }
 
   let log: DecisionLog = NO_LOG;
+  let flushLog = async () => {};
   if (settings.logFile !== null) {
     const path = settings.logFile;
-    log = createFileLog({
+    const fileLog = createFileLog({
       path,
       maxBytes: loaded.config.log.maxBytes,
       onError: (error) =>
         io.stderr(`switchkick: can't write the decision log at ${path}: ${error}\n`),
     });
+    log = fileLog;
+    flushLog = fileLog.flush;
   }
 
   const tiers = resolveTiers(loaded.config);
@@ -240,23 +249,42 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   const { hosted, jev } = loaded.config;
   const trusted = resolveTrusted(loaded.config);
   let local: LocalRoute | null = null;
+  let persisted: PersistedSessions | null = null;
+  let sessionsLine = "";
   if (settings.mode === "local") {
     const warned = new Set<number>();
+    const { policy } = loaded.config;
+    const sessions = new SessionStore(policy.maxSessions);
+    if (policy.persistSessions) {
+      const path = policy.sessionFile
+        ? expandHome(policy.sessionFile)
+        : defaultSessionsPath(io.env);
+      persisted = await persistSessions({
+        path,
+        store: sessions,
+        onError: (error) =>
+          io.stderr(`switchkick: can't read or save sessions at ${path}: ${error}\n`),
+      });
+      sessionsLine = `  sessions: ${path} (${sessions.size} restored)\n`;
+    }
+    const jevClient = createJevClient({
+      apiKey: found.key,
+      model: jev.model,
+      baseUrl: jev.baseUrl,
+      deadlineMs: jev.deadlineMs,
+      headers: settings.attribution ? { ...ATTRIBUTION } : {},
+    });
+    // With SWITCHKICK_TIER set, Jev is never asked, so there is nothing to warm.
+    if (!settings.envTier) void jevClient.warm?.();
     local = {
-      jev: createJevClient({
-        apiKey: found.key,
-        model: jev.model,
-        baseUrl: jev.baseUrl,
-        deadlineMs: jev.deadlineMs,
-        headers: settings.attribution ? { ...ATTRIBUTION } : {},
-      }),
+      jev: jevClient,
+      sessions,
       policy: resolvePolicy(loaded.config, settings.tier),
       tiers,
       trusted,
       modelPins: loaded.config.policy.modelPins,
       slugPins: loaded.config.policy.slugPins,
       requestChars: jev.requestChars,
-      maxSessions: loaded.config.policy.maxSessions,
       onJevError: (failure) => {
         // Configuration problems and bugs are worth a warning, once per status. Timeouts and
         // outages just fall back, and show up in the decision log.
@@ -315,9 +343,16 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
     `switchkick listening on http://${host}:${address.port}\n` +
       `  config: ${loaded.path ?? "built-in defaults"}\n` +
       `  key:    from ${found.source}\n` +
-      `  route:  ${route}\n`,
+      `  route:  ${route}\n` +
+      sessionsLine,
   );
-  return { exitCode: 0, server };
+  const close = async () => {
+    server.close();
+    server.closeIdleConnections();
+    await persisted?.close();
+    await flushLog();
+  };
+  return { exitCode: 0, server, close };
 }
 
 function jevErrorHint(failure: DecideFailure): string {

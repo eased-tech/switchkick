@@ -151,6 +151,7 @@
         "idleResetMinutes": 30,
         "failClosed": false,
         "maxSessions": 10000,
+        "persistSessions": true,
         "modelPins": {},
         "slugPins": true
       },
@@ -229,6 +230,16 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "persistSessions": {
+          "default": true,
+          "description": "Save sessions to a file and restore them at startup, so a restart doesn't drop a conversation to a lower tier. The file holds hashes and tiers, never text.",
+          "type": "boolean"
+        },
+        "sessionFile": {
+          "description": "Where sessions are saved. Defaults to $XDG_STATE_HOME/switchkick/sessions.json.",
+          "type": "string",
+          "minLength": 1
         },
         "modelPins": {
           "default": {},

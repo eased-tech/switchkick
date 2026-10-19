@@ -30,6 +30,11 @@ export type DecideResult =
 /** Everything outside this package talks to Jev through this interface. */
 export interface JevClient {
   decide(request: DecideRequest): Promise<DecideResult>;
+  /**
+   * Opens the connection to the Decisions API ahead of the first call, which otherwise pays for
+   * DNS, TCP and TLS (about 100 ms). Free: an unauthenticated `HEAD`. Never fails.
+   */
+  warm?(): Promise<void>;
 }
 
 export interface JevClientOptions {
@@ -84,6 +89,14 @@ export function createJevClient(options: JevClientOptions): JevClient {
   const doFetch = options.fetch ?? fetch;
 
   return {
+    async warm() {
+      try {
+        const res = await doFetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+        await res.body?.cancel();
+      } catch {
+        // Warming is best effort; the first real call connects on its own.
+      }
+    },
     async decide(request) {
       const started = performance.now();
       const elapsed = () => Math.round(performance.now() - started);

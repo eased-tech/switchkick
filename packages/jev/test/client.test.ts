@@ -143,6 +143,23 @@ describe("createJevClient", () => {
     expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
   });
 
+  it("warms the connection with an unauthenticated HEAD, and never throws", async () => {
+    const fetch = respond(404, "");
+    const client = createJevClient({ apiKey: "sk-test", fetch, baseUrl: "http://x/api/alpha///" });
+    await client.warm?.();
+    const [url, init] = fetch.mock.calls[0] ?? [];
+    expect(url).toBe("http://x/api/alpha/decisions");
+    expect(init?.method).toBe("HEAD");
+    expect(init?.headers).toBeUndefined();
+
+    const failing = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    await expect(
+      createJevClient({ apiKey: "k", fetch: failing }).warm?.(),
+    ).resolves.toBeUndefined();
+  });
+
   it("doesn't call Jev at all when the caller has already aborted", async () => {
     const fetch = respond(200, live);
     const client = createJevClient({ apiKey: "k", fetch });
