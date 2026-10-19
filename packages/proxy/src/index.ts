@@ -86,8 +86,10 @@ export {
   createScanner,
   type RouterCandidate,
   type RouterDecision,
+  readUsage,
   routerDecision,
   type ScanResult,
+  type Usage,
 } from "./metadata.js";
 export {
   PRESET_MODELS,

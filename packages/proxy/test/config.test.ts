@@ -216,7 +216,7 @@ describe("presets", () => {
     expect(hosted.excluded_models).not.toContain("anthropic/*");
     expect(hosted.excluded_models).not.toContain("typesafe/*");
     // Within the router's limits.
-    expect(() => jevRouterPlugin({ cost_tier: "low", ...hosted })).not.toThrow();
+    expect(() => jevRouterPlugin(hosted)).not.toThrow();
   });
 
   it("leave hosted mode unrestricted without a preset", () => {

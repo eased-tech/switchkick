@@ -12,7 +12,7 @@ import {
 } from "./hosted.js";
 import { headerTier, type LocalRouter, TIER_HEADER } from "./local.js";
 import type { DecisionLog, DecisionLogEntry } from "./log.js";
-import { createScanner, routerDecision } from "./metadata.js";
+import { createScanner, routerDecision, type ScanResult } from "./metadata.js";
 import { analyzeTurn } from "./turns.js";
 
 /** Where a request goes in static mode: one tier, one model, and optionally an effort. */
@@ -341,6 +341,31 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       target = routed;
     }
 
+    /** The client's copy of the body, read on the way through; logs when it ends. */
+    const logged = (
+      upstream: Response,
+      fields: (scan: ScanResult) => Partial<DecisionLogEntry>,
+    ): Response => {
+      if (upstream.body === null) {
+        write(fields({ servedModel: null, metadata: null, usage: null }));
+        return reply(upstream, null);
+      }
+      const scanner = createScanner(upstream.headers.get("content-type"));
+      const tapped = tap(upstream.body, scanner.push, (outcome) => {
+        const scan = scanner.finish();
+        let error: string | undefined;
+        if (outcome === "cancel" || (outcome === "error" && signal.aborted))
+          error = "client_closed";
+        else if (outcome === "error") error = "stream_failed";
+        write({
+          ...fields(scan),
+          ...(scan.usage ? { usage: scan.usage } : {}),
+          ...(error ? { error } : {}),
+        });
+      });
+      return reply(upstream, tapped);
+    };
+
     if (!hosted) {
       let upstream: Response;
       try {
@@ -348,12 +373,10 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       } catch (error) {
         return unreachable(error);
       }
-      write({
-        status: upstream.status,
-        generationId: upstream.headers.get("x-generation-id"),
-        upstreamMs: Math.round(performance.now() - started),
-      });
-      return reply(upstream, upstream.body);
+      entry.status = upstream.status;
+      entry.generationId = upstream.headers.get("x-generation-id");
+      entry.upstreamMs = Math.round(performance.now() - started);
+      return logged(upstream, () => ({}));
     }
 
     // A tier override picks the router's matching cost tier.
@@ -411,21 +434,11 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       );
     }
 
-    if (upstream.body === null) {
-      write({ servedModel: null, router: null });
-      return reply(upstream, null);
-    }
-    const scanner = createScanner(upstream.headers.get("content-type"));
-    const tapped = tap(upstream.body, scanner.push, (outcome) => {
-      const { servedModel, metadata } = scanner.finish();
+    return logged(upstream, ({ servedModel, metadata }) => {
       const router = routerDecision(metadata);
       // The router silently ignored `hosted.models`: none of them was in its pool.
       if (router?.listFallback === "models_ignored") warnings.push("models_ignored");
-      let error: string | undefined;
-      if (outcome === "cancel" || (outcome === "error" && signal.aborted)) error = "client_closed";
-      else if (outcome === "error") error = "stream_failed";
-      write({ servedModel, router, ...(error ? { error } : {}) });
+      return { servedModel, router };
     });
-    return reply(upstream, tapped);
   };
 }

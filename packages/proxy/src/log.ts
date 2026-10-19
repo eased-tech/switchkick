@@ -5,7 +5,7 @@ import type { Tier } from "@switchkick/core";
 import type { ApiFormat } from "./formats.js";
 import type { CostTier } from "./hosted.js";
 import type { JevLog, LocalLogFields } from "./local.js";
-import type { RouterDecision } from "./metadata.js";
+import type { RouterDecision, Usage } from "./metadata.js";
 
 /**
  * One line of the decision log, written per request. It records how the request was routed and
@@ -38,6 +38,8 @@ export interface DecisionLogEntry {
   cause?: string;
   /** Changes switchkick made to the request beyond the model, e.g. `store_rewritten`. */
   warnings?: string[];
+  /** Tokens and cost as the response reported them. Absent when it didn't. */
+  usage?: Usage;
   /** Hosted mode: the router's cost tier. */
   costTier?: CostTier;
   /**

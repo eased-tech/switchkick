@@ -38,11 +38,66 @@ export interface RouterDecision {
   advisorModel?: string;
 }
 
+/**
+ * Token counts and cost from a response's `usage`, the same across the three formats. Every
+ * field is optional because providers and errors leave some out.
+ */
+export interface Usage {
+  /** All input tokens, cached ones included. */
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Input tokens read from the prompt cache. */
+  cachedTokens?: number;
+  /** Input tokens written to the prompt cache. */
+  cacheWriteTokens?: number;
+  /** What OpenRouter charged, in USD. */
+  cost?: number;
+}
+
 export interface ScanResult {
   /** The response's top-level `model`: the model that actually served the request. */
   servedModel: string | null;
   /** `openrouter_metadata`, absent on cache hits and some errors. */
   metadata: Record<string, unknown> | null;
+  /** The last `usage` the response reported, or null if none. */
+  usage: Usage | null;
+}
+
+const count = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+
+/**
+ * Normalizes a `usage` object. Chat Completions and Responses count cached tokens inside the
+ * input; Anthropic Messages counts them separately, so they are added back in.
+ */
+export function readUsage(raw: unknown): Usage | null {
+  if (!isPlainObject(raw)) return null;
+  const usage: Usage = {};
+  const set = (key: keyof Usage, value: unknown) => {
+    const n = count(value);
+    if (n !== undefined) usage[key] = n;
+  };
+  const details = isPlainObject(raw.prompt_tokens_details)
+    ? raw.prompt_tokens_details
+    : isPlainObject(raw.input_tokens_details)
+      ? raw.input_tokens_details
+      : null;
+  if (raw.prompt_tokens !== undefined || details) {
+    set("inputTokens", raw.prompt_tokens ?? raw.input_tokens);
+    set("outputTokens", raw.completion_tokens ?? raw.output_tokens);
+    set("cachedTokens", details?.cached_tokens);
+    set("cacheWriteTokens", details?.cache_write_tokens);
+  } else {
+    const read = count(raw.cache_read_input_tokens);
+    const write = count(raw.cache_creation_input_tokens);
+    const input = count(raw.input_tokens);
+    if (input !== undefined) usage.inputTokens = input + (read ?? 0) + (write ?? 0);
+    set("outputTokens", raw.output_tokens);
+    if (read !== undefined) usage.cachedTokens = read;
+    if (write !== undefined) usage.cacheWriteTokens = write;
+  }
+  set("cost", raw.cost);
+  return Object.keys(usage).length > 0 ? usage : null;
 }
 
 export interface ResponseScanner {
@@ -57,15 +112,23 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * A scanner for a response with the given `content-type`. JSON bodies are parsed once at the end.
  * Event streams are parsed event by event, and only the events that matter are decoded as JSON:
- * the first one that names a model, and any that carry `openrouter_metadata` (the last Chat
- * chunk, Messages' `message_stop`, Responses' `response.completed`). Anything else isn't scanned.
+ * the first one that names a model, and any that carry `openrouter_metadata` or `usage` (the last
+ * Chat chunk, Messages' `message_start`, `message_delta` and `message_stop`, Responses'
+ * `response.completed`). Anything else isn't scanned. A key can't match inside a JSON string,
+ * where its quotes would be escaped.
  */
 export function createScanner(contentType: string | null): ResponseScanner {
   const type = contentType?.toLowerCase() ?? "";
-  const result: ScanResult = { servedModel: null, metadata: null };
+  const result: ScanResult = { servedModel: null, metadata: null, usage: null };
 
   const take = (payload: string) => {
-    if (result.servedModel !== null && !payload.includes('"openrouter_metadata"')) return;
+    if (
+      result.servedModel !== null &&
+      !payload.includes('"openrouter_metadata"') &&
+      !payload.includes('"usage"')
+    ) {
+      return;
+    }
     let value: unknown;
     try {
       value = JSON.parse(payload);
@@ -81,6 +144,9 @@ export function createScanner(contentType: string | null): ResponseScanner {
         result.servedModel = holder.model;
       }
       if (isPlainObject(holder.openrouter_metadata)) result.metadata = holder.openrouter_metadata;
+      // Messages streams report usage twice: input at the start, then the totals and cost.
+      const usage = readUsage(holder.usage);
+      if (usage) result.usage = { ...result.usage, ...usage };
     }
   };
 

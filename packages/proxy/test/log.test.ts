@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFileLog, type DecisionLogEntry, defaultLogPath } from "../src/index.js";
-import { send, startProxy, startUpstream } from "./helpers.js";
+import { eventually, memoryLog, send, startProxy, startUpstream } from "./helpers.js";
 
 const ENTRY: DecisionLogEntry = {
   ts: "2026-10-19T00:00:00.000Z",
@@ -97,6 +97,35 @@ describe("createFileLog", () => {
     try {
       const res = await send(`${proxy.url}/v1/chat/completions`, { body: "{}" });
       expect(res.status).toBe(200);
+    } finally {
+      await proxy.close();
+      await upstream.close();
+    }
+  });
+});
+
+describe("usage in the log", () => {
+  it("records tokens and cost from a static-mode stream, once it ends", async () => {
+    const sse = await readFile(join(import.meta.dirname, "fixtures", "chat-stream.sse"));
+    const upstream = await startUpstream((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(sse);
+    });
+    const log = memoryLog();
+    const proxy = await startProxy({
+      apiKey: "sk-test",
+      route: { tier: "balanced", model: "test/routed-model" },
+      upstreamBaseUrl: upstream.baseUrl,
+      log,
+    });
+    try {
+      const res = await send(`${proxy.url}/v1/chat/completions`, { body: '{"stream":true}' });
+      expect(res.body.equals(sse)).toBe(true);
+      await eventually(() => expect(log.entries).toHaveLength(1));
+      expect(log.entries[0]).toMatchObject({
+        status: 200,
+        usage: { inputTokens: 12, outputTokens: 4, cachedTokens: 0, cost: 0.000032 },
+      });
     } finally {
       await proxy.close();
       await upstream.close();

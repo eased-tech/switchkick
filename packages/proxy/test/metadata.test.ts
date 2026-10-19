@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createScanner, routerDecision } from "../src/index.js";
+import { createScanner, readUsage, routerDecision } from "../src/index.js";
 import { MAX_SCAN_BYTES } from "../src/metadata.js";
 
 const encode = (text: string) => new TextEncoder().encode(text);
@@ -24,6 +26,7 @@ describe("createScanner", () => {
     expect(scan("application/json; charset=utf-8", body, 3)).toEqual({
       servedModel: "vendor/a",
       metadata: METADATA,
+      usage: null,
     });
   });
 
@@ -43,6 +46,7 @@ describe("createScanner", () => {
     expect(scan("text/event-stream", stream, 1)).toEqual({
       servedModel: "vendor/é",
       metadata: METADATA,
+      usage: null,
     });
   });
 
@@ -58,6 +62,7 @@ describe("createScanner", () => {
     expect(scan("text/event-stream", stream, 7)).toEqual({
       servedModel: "vendor/r",
       metadata: METADATA,
+      usage: null,
     });
   });
 
@@ -66,15 +71,23 @@ describe("createScanner", () => {
   });
 
   it("ignores bodies of other types and malformed JSON", () => {
-    expect(scan("text/plain", '{"model":"m"}')).toEqual({ servedModel: null, metadata: null });
-    expect(scan("application/json", "{not json")).toEqual({ servedModel: null, metadata: null });
+    expect(scan("text/plain", '{"model":"m"}')).toEqual({
+      servedModel: null,
+      metadata: null,
+      usage: null,
+    });
+    expect(scan("application/json", "{not json")).toEqual({
+      servedModel: null,
+      metadata: null,
+      usage: null,
+    });
   });
 
   it("gives up on oversized bodies instead of buffering them", () => {
     const scanner = createScanner("application/json");
     scanner.push(encode('{"model":"m",'));
     scanner.push(new Uint8Array(MAX_SCAN_BYTES));
-    expect(scanner.finish()).toEqual({ servedModel: null, metadata: null });
+    expect(scanner.finish()).toEqual({ servedModel: null, metadata: null, usage: null });
   });
 });
 
@@ -114,5 +127,47 @@ describe("routerDecision", () => {
     ["a stage without data", { pipeline: [{ name: "jev-router" }] }],
   ])("returns null for %s", (_name, metadata) => {
     expect(routerDecision(metadata)).toBeNull();
+  });
+});
+
+describe("usage", () => {
+  const fixture = (name: string) =>
+    readFileSync(join(import.meta.dirname, "fixtures", name), "utf8");
+  const RECORDED = {
+    inputTokens: 12,
+    outputTokens: 4,
+    cachedTokens: 0,
+    cacheWriteTokens: 0,
+    cost: 0.000032,
+  };
+
+  it.each([
+    ["chat-json.json", "application/json"],
+    ["chat-stream.sse", "text/event-stream"],
+    ["messages-json.json", "application/json"],
+    ["messages-stream.sse", "text/event-stream"],
+    ["responses-json.json", "application/json"],
+    ["responses-stream.sse", "text/event-stream"],
+  ])("reads tokens and cost from the recorded %s", (name, type) => {
+    expect(scan(type, fixture(name), 5).usage).toEqual(RECORDED);
+  });
+
+  it("counts Anthropic's cache reads and writes as input", () => {
+    expect(
+      readUsage({
+        input_tokens: 10,
+        cache_read_input_tokens: 1000,
+        cache_creation_input_tokens: 200,
+        output_tokens: 5,
+      }),
+    ).toEqual({ inputTokens: 1210, outputTokens: 5, cachedTokens: 1000, cacheWriteTokens: 200 });
+  });
+
+  it("doesn't mistake text that mentions usage for a usage object", () => {
+    const stream = [
+      `data: ${JSON.stringify({ model: "m", choices: [{ delta: { content: '"usage": 5' } }] })}`,
+      "",
+    ].join("\n");
+    expect(scan("text/event-stream", stream).usage).toBeNull();
   });
 });
