@@ -81,6 +81,21 @@ describe("wireCodex", () => {
     expect(text).not.toContain('secret"');
   });
 
+  it("handles long runs of spaces in linear time", () => {
+    const spaces = " ".repeat(100_000);
+    const started = performance.now();
+    expect(() => wireCodex(`[${spaces}`, ENDPOINT, "c")).toThrow(ClientConfigError);
+    expect(() => wireCodex(`[[${spaces}x${spaces}`, ENDPOINT, "c")).toThrow(ClientConfigError);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it("recognizes the switchkick table however its header is spaced or quoted", () => {
+    const original = '[ model_providers . "switchkick" ] # old\nname = "old"\n';
+    const text = wireCodex(original, ENDPOINT, "c");
+    expect(text).not.toContain('"old"');
+    expect(text.match(/model_providers/g)).toHaveLength(1);
+  });
+
   it("refuses invalid TOML", () => {
     expect(() => wireCodex("model = [", ENDPOINT, "c")).toThrow(ClientConfigError);
   });

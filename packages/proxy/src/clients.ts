@@ -110,11 +110,38 @@ export class ClientConfigError extends Error {
   override name = "ClientConfigError";
 }
 
-/** A TOML table header line, e.g. `[model_providers.x]` or `[[profiles]]`, with an optional comment. */
-const TABLE_HEADER = /^\s*\[\[?\s*[^\]=,]+?\s*\]\]?\s*(#.*)?$/;
-const OUR_TABLE = new RegExp(
-  `^\\s*\\[\\s*model_providers\\s*\\.\\s*(${CODEX_PROVIDER}|"${CODEX_PROVIDER}")\\s*\\]\\s*(#.*)?$`,
-);
+/**
+ * The table a TOML header line opens, e.g. `model_providers.x` for `[model_providers.x]` or
+ * `[[profiles]]` (with an optional comment), or null for any other line. String operations rather
+ * than a regex, which would backtrack polynomially on long runs of spaces.
+ */
+function tableHeader(line: string): { name: string; array: boolean } | null {
+  const text = line.trim();
+  if (!text.startsWith("[")) return null;
+  const array = text.startsWith("[[");
+  const open = array ? 2 : 1;
+  const close = text.indexOf(array ? "]]" : "]", open);
+  if (close === -1) return null;
+  const name = text.slice(open, close).trim();
+  const rest = text.slice(close + open).trim();
+  if (name === "" || /[=,[\]]/.test(name) || (rest !== "" && !rest.startsWith("#"))) return null;
+  return { name, array };
+}
+
+const isTableHeader = (line: string) => tableHeader(line) !== null;
+
+/** Whether the line opens switchkick's own provider table. */
+function isOurTable(line: string): boolean {
+  const header = tableHeader(line);
+  if (!header || header.array) return false;
+  const name = header.name.split(".").map((part) => part.trim());
+  return (
+    name.length === 2 &&
+    name[0] === "model_providers" &&
+    (name[1] === CODEX_PROVIDER || name[1] === `"${CODEX_PROVIDER}"`)
+  );
+}
+
 const MODEL_PROVIDER_KEY = /^\s*model_provider\s*=/;
 const CODEX_COMMENT =
   "# Added by `switchkick setup`; `switchkick uninstall` restores the original file.";
@@ -164,17 +191,17 @@ export function wireCodex(original: string | null, endpoint: Endpoint, path: str
   if (trailingNewline) lines.pop();
 
   // Drop an earlier switchkick table, down to the next table header.
-  let start = lines.findIndex((line) => OUR_TABLE.test(line));
+  let start = lines.findIndex(isOurTable);
   if (start !== -1) {
     let end = start + 1;
     if (lines[start - 1] === CODEX_COMMENT) start--;
-    while (end < lines.length && !TABLE_HEADER.test(lines[end] as string)) end++;
+    while (end < lines.length && !isTableHeader(lines[end] as string)) end++;
     lines.splice(start, end - start);
   }
   while (lines.length > 0 && (lines.at(-1) as string).trim() === "") lines.pop();
 
   const setting = `model_provider = ${tomlString(CODEX_PROVIDER)}`;
-  const firstTable = lines.findIndex((line) => TABLE_HEADER.test(line));
+  const firstTable = lines.findIndex(isTableHeader);
   const topLevelEnd = firstTable === -1 ? lines.length : firstTable;
   const existing = lines.slice(0, topLevelEnd).findIndex((line) => MODEL_PROVIDER_KEY.test(line));
   if (existing !== -1) {
