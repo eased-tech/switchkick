@@ -11,6 +11,8 @@ import {
   configDir,
   expandHome,
   loadConfig,
+  MODES,
+  type Mode,
   resolveTiers,
 } from "./config.js";
 import {
@@ -20,6 +22,7 @@ import {
   type FoundKey,
   findApiKey,
 } from "./credentials.js";
+import { JEV_ROUTER_MODEL, jevRouterPlugin } from "./hosted.js";
 import { createFileLog, type DecisionLog, defaultLogPath, NO_LOG } from "./log.js";
 
 const HELP = `switchkick ${VERSION}
@@ -33,7 +36,9 @@ Serve options (each overrides the config file):
   --config <path>     Config file (default ${configDir()}/config.yaml if it exists)
   --host <addr>       Address to listen on (default 127.0.0.1)
   --port <n>          Port to listen on (default 8787)
-  --tier <tier>       Tier every request is routed to: ${TIERS.join(", ")} (default balanced)
+  --mode <mode>       How requests are routed: ${MODES.join(", ")} (default static)
+  --tier <tier>       Tier every request is routed to in static mode, and the fallback in
+                      hosted mode: ${TIERS.join(", ")} (default balanced)
   --log-file <path>   Decision log (default ${defaultLogPath()})
   --no-log            Don't write a decision log
   --no-attribution    Don't identify requests as coming from switchkick (see below)
@@ -76,6 +81,7 @@ interface ServeFlags {
   config?: string | undefined;
   host?: string | undefined;
   port?: string | undefined;
+  mode?: string | undefined;
   tier?: string | undefined;
   "log-file"?: string | undefined;
   log?: boolean | undefined;
@@ -85,6 +91,7 @@ interface ServeFlags {
 export interface ServeSettings {
   host: string;
   port: number;
+  mode: Mode;
   tier: Tier;
   token: string | null;
   attribution: boolean;
@@ -94,6 +101,10 @@ export interface ServeSettings {
 
 function isTier(value: string): value is Tier {
   return (TIERS as readonly string[]).includes(value);
+}
+
+function isMode(value: string): value is Mode {
+  return (MODES as readonly string[]).includes(value);
 }
 
 const OFF = ["off", "false", "0", "no"];
@@ -115,6 +126,8 @@ export function resolveSettings(
       return `--port must be an integer from 0 to 65535, got "${flags.port}".`;
     }
   }
+  const mode = flags.mode ?? config.mode;
+  if (!isMode(mode)) return `--mode must be one of ${MODES.join(", ")}, got "${mode}".`;
   const tier = flags.tier ?? config.defaultTier;
   if (!isTier(tier)) return `--tier must be one of ${TIERS.join(", ")}, got "${tier}".`;
 
@@ -135,6 +148,7 @@ export function resolveSettings(
   return {
     host,
     port,
+    mode,
     tier,
     token,
     attribution,
@@ -207,9 +221,17 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   }
 
   const target = resolveTiers(loaded.config)[settings.tier];
+  const { hosted } = loaded.config;
   const app = createApp({
     apiKey: found.key,
     route: { tier: settings.tier, ...target },
+    hosted:
+      settings.mode === "hosted"
+        ? {
+            plugin: jevRouterPlugin(hosted),
+            unsupportedReasoning: hosted.unsupportedReasoning,
+          }
+        : null,
     upstreamBaseUrl: loaded.config.upstream.baseUrl.replace(/\/+$/, ""),
     maxBodyBytes: loaded.config.server.maxBodyBytes,
     token: settings.token,
@@ -225,12 +247,19 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
     return fail(`can't listen on ${settings.host}:${settings.port}: ${(error as Error).message}`);
   }
   const host = address.family === "IPv6" ? `[${address.address}]` : address.address;
+  const tierRoute =
+    `${settings.tier} → ${target.model}` + `${target.effort ? `, effort ${target.effort}` : ""}`;
+  const route =
+    settings.mode === "hosted"
+      ? `hosted, ${JEV_ROUTER_MODEL} at cost_tier ${hosted.cost_tier}` +
+        `${hosted.excluded_models.length > 0 ? `, excluding ${hosted.excluded_models.length} pattern(s)` : ""}` +
+        `\n  fallback: static, ${tierRoute}`
+      : `static, ${tierRoute}`;
   io.stderr(
     `switchkick listening on http://${host}:${address.port}\n` +
       `  config: ${loaded.path ?? "built-in defaults"}\n` +
       `  key:    from ${found.source}\n` +
-      `  route:  static, ${settings.tier} → ${target.model}` +
-      `${target.effort ? `, effort ${target.effort}` : ""}\n`,
+      `  route:  ${route}\n`,
   );
   return { exitCode: 0, server };
 }
@@ -245,6 +274,7 @@ function parse(argv: string[]) {
       config: { type: "string" },
       host: { type: "string" },
       port: { type: "string" },
+      mode: { type: "string" },
       tier: { type: "string" },
       "log-file": { type: "string" },
       log: { type: "boolean" },

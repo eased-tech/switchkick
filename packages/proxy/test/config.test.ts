@@ -26,6 +26,12 @@ describe("parseConfig", () => {
       mode: "static",
       defaultTier: "balanced",
       tiers: {},
+      hosted: {
+        cost_tier: "medium",
+        models: [],
+        excluded_models: [],
+        unsupportedReasoning: "strip",
+      },
       attribution: true,
       server: { host: "127.0.0.1", port: 8787, maxBodyBytes: 20 * 1024 ** 2 },
       upstream: { baseUrl: "https://openrouter.ai/api/v1" },
@@ -66,6 +72,40 @@ describe("parseConfig", () => {
         expect(message).toContain(path);
       }
     }
+  });
+
+  it("names invalid hosted settings by path", () => {
+    const raw = {
+      mode: "hosted",
+      hosted: {
+        cost_tier: "ultra",
+        models: [""],
+        excluded_models: Array.from({ length: 1025 }, (_, i) => `vendor/model-${i}`),
+        allowed_model: ["x"],
+      },
+    };
+    expect(() => parseConfig(raw, "t")).toThrow(ConfigError);
+    try {
+      parseConfig(raw, "t");
+    } catch (error) {
+      const message = (error as Error).message;
+      for (const path of [
+        "hosted.cost_tier:",
+        "hosted.models.0:",
+        "hosted.excluded_models:",
+        "hosted.allowed_model: unrecognized key",
+      ]) {
+        expect(message).toContain(path);
+      }
+    }
+  });
+
+  it("caps each hosted list at 65,536 characters in total", () => {
+    const long = Array.from({ length: 65 }, (_, i) => `${i}`.padEnd(1024, "x"));
+    expect(() => parseConfig({ hosted: { models: long } }, "t")).toThrow(/hosted\.models/);
+    expect(parseConfig({ hosted: { models: long.slice(0, 64) } }, "t").hosted.models).toHaveLength(
+      64,
+    );
   });
 
   it("rejects effort levels that Anthropic Messages doesn't accept", () => {

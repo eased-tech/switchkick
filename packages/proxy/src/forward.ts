@@ -3,7 +3,14 @@ import type { Context, Handler } from "hono";
 import type { Effort } from "./config.js";
 import { applyEffort } from "./effort.js";
 import { type ApiFormat, type ErrorKind, errorBody, UPSTREAM_PATHS } from "./formats.js";
+import {
+  type HostedRoute,
+  JEV_ROUTER_MODEL,
+  prepareHostedBody,
+  withoutRouterPlugin,
+} from "./hosted.js";
 import type { DecisionLog, DecisionLogEntry } from "./log.js";
+import { createScanner, routerDecision } from "./metadata.js";
 
 /** Where a request goes in static mode: one tier, one model, and optionally an effort. */
 export interface StaticRoute {
@@ -15,7 +22,10 @@ export interface StaticRoute {
 
 export interface ForwardOptions {
   apiKey: string;
+  /** Where requests go in static mode, and in hosted mode when the router is unavailable. */
   route: StaticRoute;
+  /** Set for hosted mode: OpenRouter's Jev router picks the model. */
+  hosted: HostedRoute | null;
   /** e.g. `https://openrouter.ai/api/v1`. */
   upstreamBaseUrl: string;
   fetch: typeof fetch;
@@ -59,7 +69,7 @@ const DROPPED_RESPONSE_HEADERS = new Set([
   "set-cookie",
 ]);
 
-function upstreamHeaders(c: Context, options: ForwardOptions): Headers {
+function upstreamHeaders(c: Context, options: ForwardOptions, metadata: boolean): Headers {
   const headers = new Headers();
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = c.req.header(name);
@@ -77,6 +87,8 @@ function upstreamHeaders(c: Context, options: ForwardOptions): Headers {
   if (options.attribution) {
     for (const [name, value] of Object.entries(ATTRIBUTION)) headers.set(name, value);
   }
+  // Asks OpenRouter to report the router's decision in the response.
+  if (metadata) headers.set("x-openrouter-metadata", "enabled");
   return headers;
 }
 
@@ -111,12 +123,88 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** The longest upstream error message quoted back to the client. */
+const MAX_QUOTED_ERROR = 500;
+
+/** The message from an OpenRouter error body, which the client sees inside switchkick's error. */
+async function upstreamMessage(upstream: Response): Promise<string> {
+  let text: string;
+  try {
+    text = await upstream.text();
+  } catch {
+    return `HTTP ${upstream.status}`;
+  }
+  let message: unknown;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isPlainObject(parsed) && isPlainObject(parsed.error)) message = parsed.error.message;
+  } catch {
+    // Not JSON; fall through.
+  }
+  const result = typeof message === "string" && message.trim() !== "" ? message.trim() : null;
+  if (result === null) return `HTTP ${upstream.status}`;
+  return result.length > MAX_QUOTED_ERROR ? `${result.slice(0, MAX_QUOTED_ERROR)}…` : result;
+}
+
 /**
- * Handles one client request in static mode: rewrite `model`, forward to the matching OpenRouter
- * endpoint, and stream the response back byte for byte.
+ * Pipes `body` through unchanged, calling `onChunk` with each chunk after it is passed on and
+ * `onDone` exactly once: when the body ends, fails, or the client cancels it. Cancelling also
+ * cancels the upstream body.
+ */
+function tap(
+  body: ReadableStream<Uint8Array>,
+  onChunk: (chunk: Uint8Array) => void,
+  onDone: (outcome: "end" | "error" | "cancel") => void,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let done = false;
+  const finish = (outcome: "end" | "error" | "cancel") => {
+    if (done) return;
+    done = true;
+    onDone(outcome);
+  };
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let result: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        finish("error");
+        controller.error(error);
+        return;
+      }
+      if (result.done) {
+        finish("end");
+        controller.close();
+        return;
+      }
+      controller.enqueue(result.value);
+      onChunk(result.value);
+    },
+    cancel(reason) {
+      finish("cancel");
+      return reader.cancel(reason);
+    },
+  });
+}
+
+/**
+ * Handles one client request: rewrite it for the routing mode, forward it to the matching
+ * OpenRouter endpoint, and stream the response back byte for byte.
+ *
+ * - **Static:** `model` becomes the tier's model, with its effort if set.
+ * - **Hosted:** `model` becomes the Jev router, with the plugin entry added. The response is read
+ *   on its way through for the router's decision, and the log line is written when it ends. If
+ *   the router is unavailable (503), the request is retried once in static mode. Its 400 and 404
+ *   errors are rewritten to explain which setting to check.
  */
 export function forward(format: ApiFormat, options: ForwardOptions): Handler {
-  const { route, log } = options;
+  const { route, log, hosted } = options;
+  const staticFields = {
+    tier: route.tier,
+    model: route.model,
+    effort: route.effort ?? null,
+  } as const;
 
   return async (c) => {
     const started = performance.now();
@@ -124,24 +212,26 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       ts: new Date().toISOString(),
       format,
       stream: false,
-      mode: "static",
-      tier: route.tier,
+      mode: hosted ? "hosted" : "static",
+      ...(hosted ? { tier: null, model: JEV_ROUTER_MODEL, effort: null } : staticFields),
       requestedModel: null,
-      model: route.model,
-      effort: route.effort ?? null,
-      reason: "static",
+      reason: hosted ? "hosted" : "static",
       status: 0,
       generationId: null,
       upstreamMs: null,
+      ...(hosted?.plugin.cost_tier ? { costTier: hosted.plugin.cost_tier } : {}),
     };
+    const warnings: string[] = [];
+    const write = (fields: Partial<DecisionLogEntry>) =>
+      log.write({ ...entry, ...(warnings.length > 0 ? { warnings } : {}), ...fields });
     const fail = (
-      status: 400 | 502 | 504,
+      status: 400 | 404 | 502 | 504,
       kind: ErrorKind,
       message: string,
       param?: string,
       cause?: string,
     ) => {
-      log.write({ ...entry, status, error: kind, ...(cause ? { cause } : {}) });
+      write({ status, error: kind, ...(cause ? { cause } : {}) });
       return c.json(errorBody(format, kind, message, param), status);
     };
 
@@ -156,8 +246,6 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
     }
     entry.stream = body.stream === true;
     if (typeof body.model === "string") entry.requestedModel = body.model;
-    body.model = route.model;
-    if (route.effort) applyEffort(format, body, route.effort);
 
     if (format === "responses") {
       // OpenRouter's Responses API is stateless and rejects both of these with a 400.
@@ -172,26 +260,29 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
       }
       if (body.store === true) {
         body.store = false;
-        entry.warnings = ["store_rewritten"];
+        warnings.push("store_rewritten");
       }
     }
 
+    const client = body;
+    const staticBody = () => {
+      const rewritten = { ...client, model: route.model };
+      if (route.effort) applyEffort(format, rewritten, route.effort);
+      return rewritten;
+    };
+
     const signal = c.req.raw.signal;
     const search = new URL(c.req.url).search;
-    let upstream: Response;
-    try {
-      upstream = await options.fetch(
-        `${options.upstreamBaseUrl}${UPSTREAM_PATHS[format]}${search}`,
-        {
-          method: "POST",
-          headers: upstreamHeaders(c, options),
-          body: JSON.stringify(body),
-          signal,
-        },
-      );
-    } catch (error) {
+    const call = (payload: Record<string, unknown>, metadata: boolean) =>
+      options.fetch(`${options.upstreamBaseUrl}${UPSTREAM_PATHS[format]}${search}`, {
+        method: "POST",
+        headers: upstreamHeaders(c, options, metadata),
+        body: JSON.stringify(payload),
+        signal,
+      });
+    const unreachable = (error: unknown): Response => {
       if (signal.aborted) {
-        log.write({ ...entry, status: 499, error: "client_closed" });
+        write({ status: 499, error: "client_closed" });
         // Nobody is listening; this response is never sent.
         return new Response(null, { status: 499 });
       }
@@ -212,18 +303,83 @@ export function forward(format: ApiFormat, options: ForwardOptions): Handler {
         undefined,
         code,
       );
+    };
+    const reply = (upstream: Response, upstreamBody: ReadableStream<Uint8Array> | null) =>
+      new Response(upstreamBody, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: responseHeaders(upstream),
+      });
+
+    if (!hosted) {
+      let upstream: Response;
+      try {
+        upstream = await call(staticBody(), false);
+      } catch (error) {
+        return unreachable(error);
+      }
+      write({
+        status: upstream.status,
+        generationId: upstream.headers.get("x-generation-id"),
+        upstreamMs: Math.round(performance.now() - started),
+      });
+      return reply(upstream, upstream.body);
     }
 
-    log.write({
-      ...entry,
-      status: upstream.status,
-      generationId: upstream.headers.get("x-generation-id"),
-      upstreamMs: Math.round(performance.now() - started),
+    const prepared = prepareHostedBody(body, hosted);
+    if ("error" in prepared) return fail(400, "invalid_request", prepared.error, prepared.param);
+    warnings.push(...prepared.warnings);
+
+    let upstream: Response;
+    try {
+      upstream = await call(prepared.body, true);
+      if (upstream.status === 503) {
+        // The router is unavailable. One retry in static mode keeps the client working.
+        await upstream.body?.cancel().catch(() => {});
+        Object.assign(entry, staticFields, { reason: "router_unavailable", fallback: "static" });
+        upstream = await call(withoutRouterPlugin(staticBody()), false);
+      }
+    } catch (error) {
+      return unreachable(error);
+    }
+    entry.status = upstream.status;
+    entry.generationId = upstream.headers.get("x-generation-id");
+    entry.upstreamMs = Math.round(performance.now() - started);
+
+    if (entry.fallback === undefined && (upstream.status === 400 || upstream.status === 404)) {
+      const detail = await upstreamMessage(upstream);
+      if (upstream.status === 404) {
+        return fail(
+          404,
+          "router_no_model",
+          `OpenRouter's Jev router found no model it may use: ${detail}. Either ` +
+            "`hosted.excluded_models` in the switchkick config excludes every model the request " +
+            "could go to, or this OpenRouter account has no access to the router.",
+        );
+      }
+      return fail(
+        400,
+        "router_rejected",
+        `OpenRouter's Jev router rejected the request: ${detail}. If this is about the plugin ` +
+          "or reasoning settings, check the `hosted` section of the switchkick config.",
+      );
+    }
+
+    if (upstream.body === null) {
+      write({ servedModel: null, router: null });
+      return reply(upstream, null);
+    }
+    const scanner = createScanner(upstream.headers.get("content-type"));
+    const tapped = tap(upstream.body, scanner.push, (outcome) => {
+      const { servedModel, metadata } = scanner.finish();
+      const router = routerDecision(metadata);
+      // The router silently ignored `hosted.models`: none of them was in its pool.
+      if (router?.listFallback === "models_ignored") warnings.push("models_ignored");
+      let error: string | undefined;
+      if (outcome === "cancel" || (outcome === "error" && signal.aborted)) error = "client_closed";
+      else if (outcome === "error") error = "stream_failed";
+      write({ servedModel, router, ...(error ? { error } : {}) });
     });
-    return new Response(upstream.body, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers: responseHeaders(upstream),
-    });
+    return reply(upstream, tapped);
   };
 }

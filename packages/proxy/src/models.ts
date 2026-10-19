@@ -15,8 +15,9 @@ function anthropicModel(id: string) {
 }
 
 /**
- * `GET /v1/models`: the models switchkick routes to, in the shape the client's SDK expects. In
- * static mode that is the single routed model, since any model a client picks is rewritten to it.
+ * `GET /v1/models`: the models switchkick routes to, in the shape the client's SDK expects. That
+ * is a single model, since any model a client picks is rewritten to it: the tier's model in static
+ * mode, or the Jev router in hosted mode.
  */
 export function listModels(models: readonly string[]): Handler {
   return (c) => {
