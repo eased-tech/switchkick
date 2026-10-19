@@ -1,7 +1,20 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { TIERS, type Tier } from "@switchkick/core";
+import {
+  DEFAULT_ACCEPT,
+  DEFAULT_MAX_SESSIONS,
+  DEFAULT_POLICY,
+  type Policy,
+  SESSION_MODES,
+  TIERS,
+  type Tier,
+} from "@switchkick/core";
+import {
+  DEFAULT_DEADLINE_MS,
+  DEFAULT_DECISIONS_BASE_URL,
+  DEFAULT_JEV_MODEL,
+} from "@switchkick/jev";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import { COST_TIERS, ModelPatterns, UNSUPPORTED_REASONING } from "./hosted.js";
@@ -16,8 +29,8 @@ export const CONFIG_SCHEMA_URL = "https://eased-tech.github.io/switchkick/schema
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
 
-/** Routing modes. `local` arrives with the Jev client. */
-export const MODES = ["static", "hosted"] as const;
+/** Routing modes. */
+export const MODES = ["static", "hosted", "local"] as const;
 export type Mode = (typeof MODES)[number];
 
 const UNITS: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3 };
@@ -42,6 +55,11 @@ const TierTarget = z.strictObject({
     .describe("Reasoning effort to request. Omit to keep whatever the client sent."),
 });
 
+/** Characters of conversation text Jev sees, which keeps requests out of its long-context mode. */
+export const DEFAULT_REQUEST_CHARS = 24_000;
+
+const Probability = z.number().min(0).max(1);
+
 const tierTargets = Object.fromEntries(
   TIERS.map((tier) => [
     tier,
@@ -57,18 +75,137 @@ export const ConfigSchema = z
       .default("static")
       .describe(
         "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets " +
-          "OpenRouter's Jev router choose the model, configured by `hosted`.",
+          "OpenRouter's Jev router choose the model, configured by `hosted`. `local` asks Jev " +
+          "which tier each human turn needs, and applies `policy`.",
       ),
     defaultTier: z
       .enum(TIERS)
       .default("balanced")
       .describe(
-        "Tier used in static mode, and in hosted mode when the router is unavailable (HTTP 503).",
+        "Tier used in static mode, in hosted mode when the router is unavailable (HTTP 503), " +
+          "and in local mode when Jev fails or times out.",
       ),
     tiers: z
       .strictObject(tierTargets)
       .default({})
       .describe("Model per tier. A tier given here replaces the built-in one entirely."),
+    trusted: TierTarget.optional().describe(
+      "Local mode: the model for every request in a session where a secret (an API key, a " +
+        `private key, a password) was seen. Defaults to { model: ${DEFAULT_TIER_MODELS.balanced} }.`,
+    ),
+    policy: z
+      .strictObject({
+        session: z
+          .enum(SESSION_MODES)
+          .default(DEFAULT_POLICY.session)
+          .describe(
+            "How a session's tier evolves. `ratchet` decides at every human turn but never goes " +
+              "below the session's tier, which keeps the prompt cache warm. `sticky` decides " +
+              "once per session. `per-request` decides every human turn afresh.",
+          ),
+        accept: z
+          .strictObject({
+            fast: Probability.default(DEFAULT_ACCEPT.fast),
+            balanced: Probability.default(DEFAULT_ACCEPT.balanced),
+            frontier: Probability.default(DEFAULT_ACCEPT.frontier),
+          })
+          .default({ ...DEFAULT_ACCEPT })
+          .describe(
+            "Probability Jev's top tier needs to be accepted. Below it, the more capable of " +
+              "Jev's top two tiers is used. Cheaper tiers should need more confidence.",
+          ),
+        sensitiveFloor: z
+          .enum(TIERS)
+          .default(DEFAULT_POLICY.sensitiveFloor)
+          .describe(
+            "Lowest tier for requests that touch production, credentials or destructive operations.",
+          ),
+        claimGuard: z
+          .boolean()
+          .default(DEFAULT_POLICY.claimGuard)
+          .describe(
+            "Raise the tier one level when a message tries to dictate its own tier or claims " +
+              "prior review.",
+          ),
+        idleResetMinutes: z
+          .number()
+          .min(0)
+          .default(DEFAULT_POLICY.idleResetMs / 60_000)
+          .describe("After this long without requests, a session starts afresh at its next turn."),
+        failClosed: z
+          .boolean()
+          .default(DEFAULT_POLICY.failClosed)
+          .describe("Answer 503 when Jev fails, instead of falling back to `defaultTier`."),
+        maxSessions: z
+          .int()
+          .min(1)
+          .default(DEFAULT_MAX_SESSIONS)
+          .describe("Sessions kept in memory. The least recently used are forgotten first."),
+        modelPins: z
+          .record(z.string().min(1), z.string().min(1))
+          .default({})
+          .describe(
+            "Requested models to send to a fixed OpenRouter model instead of routing, e.g. " +
+              '`{ "claude-opus-*": anthropic/claude-opus-5.5 }`. `*` matches anything.',
+          ),
+        slugPins: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Send a requested model that is already an OpenRouter slug (contains `/`, e.g. " +
+              "`openai/gpt-5.5`) as is, instead of routing it. Set to false to make `tiers`, " +
+              "`trusted` and `modelPins` the only models local mode can use.",
+          ),
+      })
+      .default({
+        session: DEFAULT_POLICY.session,
+        accept: { ...DEFAULT_ACCEPT },
+        sensitiveFloor: DEFAULT_POLICY.sensitiveFloor,
+        claimGuard: DEFAULT_POLICY.claimGuard,
+        idleResetMinutes: DEFAULT_POLICY.idleResetMs / 60_000,
+        failClosed: DEFAULT_POLICY.failClosed,
+        maxSessions: DEFAULT_MAX_SESSIONS,
+        modelPins: {},
+        slugPins: true,
+      })
+      .describe("Local mode routing policy."),
+    jev: z
+      .strictObject({
+        model: z
+          .string()
+          .min(1)
+          .default(DEFAULT_JEV_MODEL)
+          .describe(
+            "Jev model. Pinned to a version because the thresholds are tuned against it; " +
+              "`~typesafe/jev-latest` follows new releases.",
+          ),
+        baseUrl: z
+          .url()
+          .default(DEFAULT_DECISIONS_BASE_URL)
+          .describe("Base URL of OpenRouter's Decisions API."),
+        deadlineMs: z
+          .int()
+          .min(50)
+          .max(60_000)
+          .default(DEFAULT_DEADLINE_MS)
+          .describe("How long to wait for Jev before falling back. Jev's median is about 0.7 s."),
+        requestChars: z
+          .int()
+          .min(1000)
+          .max(1_000_000)
+          .default(DEFAULT_REQUEST_CHARS)
+          .describe(
+            "Most characters of conversation text sent to Jev. Above about 32,000, Jev switches " +
+              "to a slower, less accurate long-context mode.",
+          ),
+      })
+      .default({
+        model: DEFAULT_JEV_MODEL,
+        baseUrl: DEFAULT_DECISIONS_BASE_URL,
+        deadlineMs: DEFAULT_DEADLINE_MS,
+        requestChars: DEFAULT_REQUEST_CHARS,
+      })
+      .describe("Local mode: how switchkick calls Jev."),
     hosted: z
       .strictObject({
         cost_tier: z
@@ -142,6 +279,27 @@ export function resolveTiers(config: Config): Record<Tier, TierTargetConfig> {
   return Object.fromEntries(
     TIERS.map((tier) => [tier, config.tiers[tier] ?? { model: DEFAULT_TIER_MODELS[tier] }]),
   ) as Record<Tier, TierTargetConfig>;
+}
+
+/** The trusted target, falling back to the built-in balanced model. */
+export function resolveTrusted(config: Config): TierTargetConfig {
+  return (
+    (config.trusted as TierTargetConfig | undefined) ?? { model: DEFAULT_TIER_MODELS.balanced }
+  );
+}
+
+/** The core routing policy for a config's `defaultTier` and `policy` settings. */
+export function resolvePolicy(config: Config, defaultTier: Tier = config.defaultTier): Policy {
+  const { policy } = config;
+  return {
+    defaultTier,
+    session: policy.session,
+    accept: policy.accept,
+    sensitiveFloor: policy.sensitiveFloor,
+    claimGuard: policy.claimGuard,
+    idleResetMs: policy.idleResetMinutes * 60_000,
+    failClosed: policy.failClosed,
+  };
 }
 
 export class ConfigError extends Error {

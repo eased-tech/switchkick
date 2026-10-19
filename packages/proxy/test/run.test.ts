@@ -7,6 +7,16 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CredentialError, run } from "../src/index.js";
 import { send, startUpstream, type Upstream } from "./helpers.js";
 
+const JEV_FRONTIER = {
+  model: "typesafe/jev-1.14-20261014",
+  answers: {
+    tier: { type: "choice", choice: "frontier", probabilities: { frontier: 0.9 } },
+    sensitive: { type: "noul", noul: 0 },
+    self_routing: { type: "noul", noul: 0 },
+  },
+  usage: { input_tokens: 100, output_tokens: 0, cost: 0.000004 },
+};
+
 let dir: string;
 let upstream: Upstream;
 let server: Server | undefined;
@@ -15,9 +25,10 @@ let stderr: string;
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "switchkick-run-"));
   stderr = "";
-  upstream = await startUpstream((_req, res) => {
+  upstream = await startUpstream((req, res) => {
     res.writeHead(200, { "content-type": "application/json" });
-    res.end("{}");
+    // Stands in for Jev too, which local mode reaches at `jev.baseUrl`.
+    res.end(req.url.endsWith("/decisions") ? JSON.stringify(JEV_FRONTIER) : "{}");
   });
 });
 
@@ -87,15 +98,57 @@ describe("switchkick serve", () => {
     expect(stderr).toContain("fallback: static, balanced → anthropic/claude-sonnet-5.5");
   });
 
+  it("asks Jev in local mode, with the config's Jev settings and attribution", async () => {
+    const { exitCode, url } = await serve(
+      `mode: local\njev: { baseUrl: "${upstream.baseUrl}", model: test/jev }\n` +
+        "trusted: { model: test/trusted }\n",
+    );
+    expect(exitCode).toBe(0);
+    const body = JSON.stringify({ model: "gpt-5", messages: [{ role: "user", content: "hi" }] });
+    await send(`${url}/v1/chat/completions`, { body });
+    const [decision, call] = upstream.requests;
+    expect(decision?.url).toBe("/api/v1/decisions");
+    expect(JSON.parse(decision?.body ?? "{}").model).toBe("test/jev");
+    expect(decision?.headers["x-openrouter-title"]).toBe("switchkick");
+    expect(JSON.parse(call?.body ?? "{}").model).toBe("anthropic/claude-opus-5.5");
+    expect(stderr).toContain("local, test/jev picks the tier, ratchet sessions");
+    expect(stderr).toContain("trusted → test/trusted");
+  });
+
+  it("routes every request at SWITCHKICK_TIER in local mode, without asking Jev", async () => {
+    const { url } = await serve("mode: local\n", [], { SWITCHKICK_TIER: "fast" });
+    expect(await routedModel(url)).toBe("anthropic/claude-haiku-5.5");
+    expect(upstream.requests).toHaveLength(1);
+    expect(stderr).toContain("every request at fast (SWITCHKICK_TIER=fast)");
+  });
+
+  it("uses SWITCHKICK_TIER as the static tier, below --tier", async () => {
+    const env = { SWITCHKICK_TIER: "frontier" };
+    expect(await routedModel((await serve("", [], env)).url)).toBe("anthropic/claude-opus-5.5");
+    server?.closeAllConnections();
+    server?.close();
+    expect(await routedModel((await serve("", ["--tier", "fast"], env)).url)).toBe(
+      "anthropic/claude-haiku-5.5",
+    );
+  });
+
+  it("rejects an unknown SWITCHKICK_TIER", async () => {
+    const { exitCode } = await serve("", [], { SWITCHKICK_TIER: "turbo" });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain(
+      'SWITCHKICK_TIER must be one of fast, balanced, frontier, got "turbo"',
+    );
+  });
+
   it("lets --mode override the config file", async () => {
     const { url } = await serve("mode: hosted\n", ["--mode", "static"]);
     expect(await routedModel(url)).toBe("anthropic/claude-sonnet-5.5");
   });
 
   it("rejects an unknown --mode", async () => {
-    const { exitCode } = await serve("", ["--mode", "local"]);
+    const { exitCode } = await serve("", ["--mode", "smart"]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain('--mode must be one of static, hosted, got "local"');
+    expect(stderr).toContain('--mode must be one of static, hosted, local, got "smart"');
   });
 
   it("refuses a non-loopback host from the config file without a token", async () => {

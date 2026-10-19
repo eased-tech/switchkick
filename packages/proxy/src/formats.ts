@@ -28,7 +28,8 @@ export type ErrorKind =
   | "upstream_unreachable"
   | "upstream_timeout"
   | "router_rejected"
-  | "router_no_model";
+  | "router_no_model"
+  | "jev_unavailable";
 
 const ANTHROPIC_TYPES: Record<ErrorKind, string> = {
   invalid_request: "invalid_request_error",
@@ -41,6 +42,7 @@ const ANTHROPIC_TYPES: Record<ErrorKind, string> = {
   upstream_timeout: "timeout_error",
   router_rejected: "invalid_request_error",
   router_no_model: "not_found_error",
+  jev_unavailable: "overloaded_error",
 };
 
 const OPENAI_TYPES: Record<ErrorKind, string> = {
@@ -54,6 +56,7 @@ const OPENAI_TYPES: Record<ErrorKind, string> = {
   upstream_timeout: "server_error",
   router_rejected: "invalid_request_error",
   router_no_model: "invalid_request_error",
+  jev_unavailable: "server_error",
 };
 
 /**

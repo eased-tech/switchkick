@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { parseArgs } from "node:util";
 import { createAdaptorServer } from "@hono/node-server";
 import { TIERS, type Tier } from "@switchkick/core";
+import { createJevClient, type DecideFailure } from "@switchkick/jev";
 import { isLoopback, LOOPBACK_HOSTS } from "./access.js";
 import { createApp, VERSION } from "./app.js";
 import {
@@ -13,7 +14,9 @@ import {
   loadConfig,
   MODES,
   type Mode,
+  resolvePolicy,
   resolveTiers,
+  resolveTrusted,
 } from "./config.js";
 import {
   CredentialError,
@@ -22,7 +25,9 @@ import {
   type FoundKey,
   findApiKey,
 } from "./credentials.js";
-import { JEV_ROUTER_MODEL, jevRouterPlugin } from "./hosted.js";
+import { ATTRIBUTION } from "./forward.js";
+import { COST_TIER_FOR, JEV_ROUTER_MODEL, jevRouterPlugin } from "./hosted.js";
+import type { LocalRoute } from "./local.js";
 import { createFileLog, type DecisionLog, defaultLogPath, NO_LOG } from "./log.js";
 
 const HELP = `switchkick ${VERSION}
@@ -38,7 +43,7 @@ Serve options (each overrides the config file):
   --port <n>          Port to listen on (default 8787)
   --mode <mode>       How requests are routed: ${MODES.join(", ")} (default static)
   --tier <tier>       Tier every request is routed to in static mode, and the fallback in
-                      hosted mode: ${TIERS.join(", ")} (default balanced)
+                      hosted and local mode: ${TIERS.join(", ")} (default balanced)
   --log-file <path>   Decision log (default ${defaultLogPath()})
   --no-log            Don't write a decision log
   --no-attribution    Don't identify requests as coming from switchkick (see below)
@@ -55,6 +60,8 @@ Environment:
   SWITCHKICK_CONFIG   Config file, if --config isn't given.
   SWITCHKICK_TOKEN    Clients must send this as their API key. Required when the host is not a
                       loopback address.
+  SWITCHKICK_TIER     Route every request at this tier: the static tier, the tier in local
+                      mode (Jev isn't asked), or the matching cost_tier in hosted mode.
   SWITCHKICK_ATTRIBUTION=off
                       Same as --no-attribution.
 
@@ -93,6 +100,8 @@ export interface ServeSettings {
   port: number;
   mode: Mode;
   tier: Tier;
+  /** `SWITCHKICK_TIER` in hosted and local mode, where it overrides every request. */
+  envTier: Tier | null;
   token: string | null;
   attribution: boolean;
   /** Null when logging is off. */
@@ -128,7 +137,12 @@ export function resolveSettings(
   }
   const mode = flags.mode ?? config.mode;
   if (!isMode(mode)) return `--mode must be one of ${MODES.join(", ")}, got "${mode}".`;
-  const tier = flags.tier ?? config.defaultTier;
+  const envTier = env.SWITCHKICK_TIER?.trim().toLowerCase() || null;
+  if (envTier !== null && !isTier(envTier)) {
+    return `SWITCHKICK_TIER must be one of ${TIERS.join(", ")}, got "${env.SWITCHKICK_TIER}".`;
+  }
+  // In static mode the environment's tier is the static tier, below the flag.
+  const tier = flags.tier ?? (mode === "static" ? envTier : null) ?? config.defaultTier;
   if (!isTier(tier)) return `--tier must be one of ${TIERS.join(", ")}, got "${tier}".`;
 
   const token = env.SWITCHKICK_TOKEN?.trim() || null;
@@ -150,6 +164,7 @@ export function resolveSettings(
     port,
     mode,
     tier,
+    envTier: mode === "static" ? null : envTier,
     token,
     attribution,
     logFile: logging ? (logFile ?? defaultLogPath(env)) : null,
@@ -220,8 +235,38 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
     });
   }
 
-  const target = resolveTiers(loaded.config)[settings.tier];
-  const { hosted } = loaded.config;
+  const tiers = resolveTiers(loaded.config);
+  const target = tiers[settings.tier];
+  const { hosted, jev } = loaded.config;
+  const trusted = resolveTrusted(loaded.config);
+  let local: LocalRoute | null = null;
+  if (settings.mode === "local") {
+    const warned = new Set<number>();
+    local = {
+      jev: createJevClient({
+        apiKey: found.key,
+        model: jev.model,
+        baseUrl: jev.baseUrl,
+        deadlineMs: jev.deadlineMs,
+        headers: settings.attribution ? { ...ATTRIBUTION } : {},
+      }),
+      policy: resolvePolicy(loaded.config, settings.tier),
+      tiers,
+      trusted,
+      modelPins: loaded.config.policy.modelPins,
+      slugPins: loaded.config.policy.slugPins,
+      requestChars: jev.requestChars,
+      maxSessions: loaded.config.policy.maxSessions,
+      onJevError: (failure) => {
+        // Configuration problems and bugs are worth a warning, once per status. Timeouts and
+        // outages just fall back, and show up in the decision log.
+        const status = failure.kind === "http" ? failure.status : 0;
+        if (![400, 401, 402, 403, 404, 413].includes(status) || warned.has(status)) return;
+        warned.add(status);
+        io.stderr(`switchkick: Jev returned ${status}: ${jevErrorHint(failure)}\n`);
+      },
+    };
+  }
   const app = createApp({
     apiKey: found.key,
     route: { tier: settings.tier, ...target },
@@ -232,6 +277,8 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
             unsupportedReasoning: hosted.unsupportedReasoning,
           }
         : null,
+    local,
+    envTier: settings.envTier,
     upstreamBaseUrl: loaded.config.upstream.baseUrl.replace(/\/+$/, ""),
     maxBodyBytes: loaded.config.server.maxBodyBytes,
     token: settings.token,
@@ -249,12 +296,21 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   const host = address.family === "IPv6" ? `[${address.address}]` : address.address;
   const tierRoute =
     `${settings.tier} → ${target.model}` + `${target.effort ? `, effort ${target.effort}` : ""}`;
-  const route =
-    settings.mode === "hosted"
-      ? `hosted, ${JEV_ROUTER_MODEL} at cost_tier ${hosted.cost_tier}` +
-        `${hosted.excluded_models.length > 0 ? `, excluding ${hosted.excluded_models.length} pattern(s)` : ""}` +
-        `\n  fallback: static, ${tierRoute}`
-      : `static, ${tierRoute}`;
+  const forced = settings.envTier ? ` (SWITCHKICK_TIER=${settings.envTier})` : "";
+  let route = `static, ${tierRoute}`;
+  if (settings.mode === "hosted") {
+    const costTier = settings.envTier ? COST_TIER_FOR[settings.envTier] : hosted.cost_tier;
+    route =
+      `hosted, ${JEV_ROUTER_MODEL} at cost_tier ${costTier}${forced}` +
+      `${hosted.excluded_models.length > 0 ? `, excluding ${hosted.excluded_models.length} pattern(s)` : ""}` +
+      `\n  fallback: static, ${tierRoute}`;
+  } else if (settings.mode === "local") {
+    const { session } = loaded.config.policy;
+    route =
+      `local, ${settings.envTier ? `every request at ${settings.envTier}${forced}` : `${jev.model} picks the tier, ${session} sessions`}` +
+      `\n  tiers:  ${TIERS.map((t) => `${t} → ${tiers[t].model}`).join(", ")}; trusted → ${trusted.model}` +
+      `\n  fallback: ${tierRoute}${loaded.config.policy.failClosed ? " (off: failClosed)" : ""}`;
+  }
   io.stderr(
     `switchkick listening on http://${host}:${address.port}\n` +
       `  config: ${loaded.path ?? "built-in defaults"}\n` +
@@ -262,6 +318,17 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
       `  route:  ${route}\n`,
   );
   return { exitCode: 0, server };
+}
+
+function jevErrorHint(failure: DecideFailure): string {
+  const message = failure.kind === "http" ? failure.message : failure.kind;
+  if (failure.kind === "http" && [401, 402, 403].includes(failure.status)) {
+    return `${message}. Check the OpenRouter key and its credits; routing falls back to defaultTier.`;
+  }
+  if (failure.kind === "http" && failure.status === 404) {
+    return `${message}. Check \`jev.model\` in the config; routing falls back to defaultTier.`;
+  }
+  return `${message}. This looks like a switchkick bug; please report it. Routing falls back to defaultTier.`;
 }
 
 function parse(argv: string[]) {

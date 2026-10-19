@@ -1,3 +1,4 @@
+import type { Tier } from "@switchkick/core";
 import { z } from "zod";
 
 /** The OpenRouter model that hands each request to the Jev router. */
@@ -6,6 +7,13 @@ export const JEV_ROUTER_MODEL = "typesafe/jev-router";
 /** The router's spend policies, from cheapest to most capable. */
 export const COST_TIERS = ["low", "medium", "high"] as const;
 export type CostTier = (typeof COST_TIERS)[number];
+
+/** The router cost tier a tier override maps to in hosted mode. */
+export const COST_TIER_FOR: Record<Tier, CostTier> = {
+  fast: "low",
+  balanced: "medium",
+  frontier: "high",
+};
 
 /** Limits the router enforces on each model list, returning 400 beyond them. */
 export const MAX_PATTERNS = 1024;
