@@ -244,7 +244,20 @@ export async function summarize(
   return summary;
 }
 
-const usd = (n: number) => (n === 0 ? "$0" : n < 0.01 ? `$${n.toFixed(4)}` : `$${n.toFixed(2)}`);
+/**
+ * Dollars: cents above a cent, and two significant figures below it, so a Jev call's ~$0.00002
+ * doesn't print as $0.0000.
+ */
+export function formatUsd(n: number): string {
+  if (n === 0) return "$0";
+  if (n < 0) return `-${formatUsd(-n)}`;
+  if (n < 0.000001) return "<$0.000001";
+  const rounded = n >= 0.01 ? n : Number(n.toPrecision(2));
+  if (rounded >= 0.01) return `$${rounded.toFixed(2)}`;
+  return `$${rounded.toFixed(1 - Math.floor(Math.log10(rounded)))}`;
+}
+
+const usd = formatUsd;
 const pct = (part: number, whole: number) =>
   whole === 0 ? "0%" : `${((100 * part) / whole).toFixed(part / whole < 0.1 ? 1 : 0)}%`;
 const tokens = (n: number) =>
