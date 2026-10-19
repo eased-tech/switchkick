@@ -1,0 +1,34 @@
+{
+  "name": "switchkick",
+  "version": "0.0.0",
+  "description": "Local proxy that routes OpenAI and Anthropic API traffic through OpenRouter, using Jev to pick the model for each turn.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "switchkick": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "switchkick-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "dev": "tsup --watch --onSuccess \"node dist/cli.js serve\""
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@switchkick/core": "workspace:*",
+    "@switchkick/jev": "workspace:*",
+    "hono": "^4.13.13"
+  }
+}
