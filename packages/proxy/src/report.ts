@@ -301,7 +301,9 @@ export function formatReport(s: ReportSummary): string {
       `  input ${tokens(sp.inputTokens)} tokens (${pct(sp.cachedTokens, sp.inputTokens)} from cache), output ${tokens(sp.outputTokens)}`,
     );
   }
-  if (s.baseline && "cost" in s.baseline) {
+  if (sp.measured === 0) {
+    // Nothing to compare.
+  } else if (s.baseline && "cost" in s.baseline) {
     const saved = s.baseline.cost - sp.total;
     lines.push(
       `  on ${s.baseline.model} alone, the same tokens would cost about ${usd(s.baseline.cost)} at list ` +

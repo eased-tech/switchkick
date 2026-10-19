@@ -374,8 +374,9 @@ async function live(
       `HTTP ${response.status}`;
     if (response.status === 402) {
       fail(
-        `Model call: OpenRouter refused it (402): ${message}\n    The account's credit doesn't ` +
-          `cover the request's worst case at the frontier tier with ${what}. Add credit, or ` +
+        `Model call: OpenRouter refused it (402): ${message}\n    The account's credit, or the ` +
+          `key's limit, doesn't cover the request's worst case at the frontier tier with ${what}. ` +
+          "Add credit or raise the key's limit, or " +
           (claude
             ? "lower CLAUDE_CODE_MAX_OUTPUT_TOKENS in Claude Code's settings."
             : "lower max_tokens."),

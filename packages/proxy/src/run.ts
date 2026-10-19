@@ -56,8 +56,9 @@ Commands:
   eval        Run labelled prompts through Jev and compare its tiers with the labels.
   env         Print the environment for pointing one shell's client at switchkick.
 
-Run \`switchkick <command> --help\` for a command's options.
-  --version   Print the version.
+Options:
+  -h, --help     Print this help, or a command's with \`switchkick <command> --help\`.
+  -v, --version  Print the version.
 `;
 
 const SERVE_HELP = `Usage: switchkick serve [options]

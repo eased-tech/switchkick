@@ -28,8 +28,8 @@ cheaper tier than its label (a quality risk) or a dearer one (a cost), and how e
 
 The set is JSON Lines, one prompt per line:
   {"id": "rename", "tier": "fast", "prompt": "Rename x to count in utils.ts"}
-"previous" may hold the assistant message the prompt replies to. Each prompt costs one Jev call
-(about $0.0003).
+"previous" may hold the assistant message the prompt replies to. Each prompt costs one Jev call,
+a small fraction of a cent.
 
 Options:
   --set <file>        The labelled set (default ${DEFAULT_EVAL_SET}, as in the switchkick repo)
