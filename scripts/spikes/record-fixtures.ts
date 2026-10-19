@@ -28,9 +28,11 @@ const fixturesDir = join(import.meta.dirname, "../../packages/proxy/test/fixture
 const outDir = join(import.meta.dirname, "out");
 
 const PROMPT = "Reply with exactly: ok";
+// Must match ATTRIBUTION in packages/proxy/src/forward.ts. The title renames the app on
+// OpenRouter, so a different one here would relabel switchkick's public app page.
 const ATTRIBUTION = {
-  "HTTP-Referer": "https://github.com/switchkick/switchkick",
-  "X-OpenRouter-Title": "switchkick spikes",
+  "HTTP-Referer": "https://github.com/eased-tech/switchkick",
+  "X-OpenRouter-Title": "switchkick",
 };
 
 type Format = "chat" | "responses" | "messages";
