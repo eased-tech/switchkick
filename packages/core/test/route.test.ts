@@ -8,6 +8,7 @@ import {
   type RouteInput,
   type RoutePlan,
   type SessionState,
+  SessionStore,
   type Tier,
 } from "../src/index.js";
 
@@ -276,5 +277,19 @@ describe("planRoute", () => {
       const policy: Policy = { ...DEFAULT_POLICY, failClosed: true };
       expect(ask(planRoute(input(), null, policy), null)).toBeNull();
     });
+  });
+});
+
+describe("SessionStore", () => {
+  it("counts changes and lists sessions least recently used first", () => {
+    const store = new SessionStore(2);
+    const state = session();
+    store.set("a", state);
+    store.set("b", state);
+    store.get("a");
+    expect(store.entries().map(([key]) => key)).toEqual(["b", "a"]);
+    store.set("c", state);
+    expect(store.entries().map(([key]) => key)).toEqual(["a", "c"]);
+    expect(store.version).toBe(3);
   });
 });

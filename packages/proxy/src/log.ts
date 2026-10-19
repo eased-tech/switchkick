@@ -68,10 +68,14 @@ export interface DecisionLog {
 
 export const DEFAULT_LOG_MAX_BYTES = 50 * 1024 * 1024;
 
-/** `$XDG_STATE_HOME/switchkick/decisions.jsonl`, falling back to `~/.local/state`. */
+/** `$XDG_STATE_HOME/switchkick`, falling back to `~/.local/state/switchkick`. */
+export function stateDir(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "switchkick");
+}
+
+/** `decisions.jsonl` in {@link stateDir}. */
 export function defaultLogPath(env: NodeJS.ProcessEnv = process.env): string {
-  const stateHome = env.XDG_STATE_HOME || join(homedir(), ".local", "state");
-  return join(stateHome, "switchkick", "decisions.jsonl");
+  return join(stateDir(env), "decisions.jsonl");
 }
 
 export interface FileLogOptions {

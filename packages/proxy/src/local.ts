@@ -33,6 +33,8 @@ export interface LocalRoute {
   /** Characters of conversation text Jev sees. */
   requestChars?: number;
   maxSessions?: number;
+  /** A store to use instead of a new one, e.g. one loaded from disk. `maxSessions` is then unused. */
+  sessions?: SessionStore;
   /** Clock, for tests. */
   now?: () => number;
   /** Called when a Jev call fails, e.g. to warn about a bad key. */
@@ -164,7 +166,7 @@ export interface LocalRouter {
  * API key. Only hashes are kept.
  */
 export function createLocalRouter(options: LocalRoute, envTier: Tier | null = null): LocalRouter {
-  const sessions = new SessionStore(options.maxSessions);
+  const sessions = options.sessions ?? new SessionStore(options.maxSessions);
   const pins = compilePins(options.modelPins ?? {});
   const now = options.now ?? Date.now;
   const requestChars = options.requestChars ?? 24_000;

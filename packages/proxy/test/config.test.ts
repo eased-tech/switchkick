@@ -46,6 +46,7 @@ describe("parseConfig", () => {
         idleResetMinutes: 30,
         failClosed: false,
         maxSessions: 10_000,
+        persistSessions: true,
         modelPins: {},
         slugPins: true,
       },

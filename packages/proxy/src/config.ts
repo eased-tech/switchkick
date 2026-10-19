@@ -141,6 +141,20 @@ export const ConfigSchema = z
           .min(1)
           .default(DEFAULT_MAX_SESSIONS)
           .describe("Sessions kept in memory. The least recently used are forgotten first."),
+        persistSessions: z
+          .boolean()
+          .default(true)
+          .describe(
+            "Save sessions to a file and restore them at startup, so a restart doesn't drop a " +
+              "conversation to a lower tier. The file holds hashes and tiers, never text.",
+          ),
+        sessionFile: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Where sessions are saved. Defaults to $XDG_STATE_HOME/switchkick/sessions.json.",
+          ),
         modelPins: z
           .record(z.string().min(1), z.string().min(1))
           .default({})
@@ -165,6 +179,7 @@ export const ConfigSchema = z
         idleResetMinutes: DEFAULT_POLICY.idleResetMs / 60_000,
         failClosed: DEFAULT_POLICY.failClosed,
         maxSessions: DEFAULT_MAX_SESSIONS,
+        persistSessions: true,
         modelPins: {},
         slugPins: true,
       })

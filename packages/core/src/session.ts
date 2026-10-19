@@ -23,6 +23,7 @@ export const DEFAULT_MAX_SESSIONS = 10_000;
 export class SessionStore {
   readonly #sessions = new Map<string, SessionState>();
   readonly #max: number;
+  #version = 0;
 
   constructor(maxSessions = DEFAULT_MAX_SESSIONS) {
     this.#max = Math.max(1, maxSessions);
@@ -30,6 +31,16 @@ export class SessionStore {
 
   get size(): number {
     return this.#sessions.size;
+  }
+
+  /** Increases with every change, so a caller can tell whether there is anything new to save. */
+  get version(): number {
+    return this.#version;
+  }
+
+  /** Every session, least recently used first, so replaying them through `set` keeps the order. */
+  entries(): [key: string, state: SessionState][] {
+    return [...this.#sessions];
   }
 
   get(key: string): SessionState | null {
@@ -41,6 +52,7 @@ export class SessionStore {
   }
 
   set(key: string, state: SessionState): void {
+    this.#version++;
     this.#sessions.delete(key);
     this.#sessions.set(key, state);
     while (this.#sessions.size > this.#max) {

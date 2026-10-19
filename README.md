@@ -167,6 +167,7 @@ policy:
   idleResetMinutes: 30
   failClosed: false
   maxSessions: 10000
+  persistSessions: true        # sessionFile: ~/.local/state/switchkick/sessions.json
   modelPins: {}
   slugPins: true
 jev:
@@ -214,7 +215,10 @@ only ever raise the tier. Jev sees the user's latest message and the reply befor
 if it contains something that looks like a secret.
 
 If Jev fails or takes longer than `jev.deadlineMs`, the request goes to `defaultTier`, or the
-session's tier if that's higher. With `failClosed: true`, switchkick answers 503 instead.
+session's tier if that's higher. With `failClosed: true`, switchkick answers 503 instead. Jev
+usually answers in about 0.55 s, and rarely takes over 1 s. To save the first call the cost of
+connecting, switchkick opens the connection at startup with a `HEAD` request that carries no
+key and no data.
 
 ### Sessions
 
@@ -238,6 +242,11 @@ subagent and inherits the session's tier. If a conversation that is already seve
 arrives with a different system prompt, it's taken to be the main conversation, and the session
 follows it. Sessions live in memory, at most `maxSessions` of them, and only hashes of their keys
 are kept.
+
+Sessions are saved to `~/.local/state/switchkick/sessions.json` every 30 seconds when something
+changed, and when switchkick stops, so a restart doesn't drop a conversation to a lower tier. The
+file holds session hashes, tiers and timestamps, never text, and is readable only by you. Set
+`policy.sessionFile` to move it, or `policy.persistSessions: false` to keep sessions in memory only.
 
 ### Claude Code
 
