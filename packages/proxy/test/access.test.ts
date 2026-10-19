@@ -78,7 +78,14 @@ describe("with a token", () => {
 
   it("rejects a missing or wrong token", async () => {
     const { upstream, proxy } = await setup({ token: "tok" });
-    for (const headers of [{}, { authorization: "Bearer nope" }, { "x-api-key": "tokk" }]) {
+    // Includes a longer token and a shorter one that share the real token's prefix.
+    for (const headers of [
+      {},
+      { authorization: "Bearer nope" },
+      { "x-api-key": "tokk" },
+      { "x-api-key": "to" },
+      { authorization: "Bearer " },
+    ]) {
       const res = await send(`${proxy.url}/v1/chat/completions`, { body: "{}", headers });
       expect(res.status).toBe(401);
       expect(res.json()).toMatchObject({ error: { type: "authentication_error" } });

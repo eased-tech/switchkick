@@ -97,12 +97,22 @@ describe("findApiKey", () => {
 });
 
 describe("parseEnvFile", () => {
+  it("stays fast on long runs of spaces and comment markers", () => {
+    const started = performance.now();
+    parseEnvFile(`OPENROUTER_API_KEY=${" ".repeat(50_000)}x`);
+    parseEnvFile(`OPENROUTER_API_KEY=x${" #".repeat(50_000)}`);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
   it.each([
     ["OPENROUTER_API_KEY=sk-1", "sk-1"],
     ["export OPENROUTER_API_KEY=sk-2", "sk-2"],
     ['OPENROUTER_API_KEY="sk-3"', "sk-3"],
     ["OPENROUTER_API_KEY = sk-4  # comment", "sk-4"],
     ["\r\n# OPENROUTER_API_KEY=commented\r\nOTHER=1\r\nOPENROUTER_API_KEY=sk-5\r\n", "sk-5"],
+    ["export\tOPENROUTER_API_KEY=sk-6", "sk-6"],
+    ["OPENROUTER_API_KEY_OLD=sk-wrong\nOPENROUTER_API_KEY=sk-7", "sk-7"],
+    ['OPENROUTER_API_KEY="sk # not a comment"', "sk # not a comment"],
     ["OPENROUTER_API_KEY=", null],
     ["", null],
   ])("parses %j", (text, expected) => {

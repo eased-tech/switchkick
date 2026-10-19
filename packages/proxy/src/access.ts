@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { Context, MiddlewareHandler } from "hono";
 import { type ApiFormat, type ErrorKind, errorBody } from "./formats.js";
 
@@ -31,8 +31,16 @@ export function hostnameOf(hostHeader: string): string {
   return colon === -1 ? host : host.slice(0, colon);
 }
 
-function digest(value: string): Buffer {
-  return createHash("sha256").update(value).digest();
+/**
+ * Compares a presented token with the expected one in time that doesn't depend on their
+ * contents: the presented bytes are copied into a buffer of the expected length before the
+ * constant-time comparison, so a length mismatch doesn't return early either.
+ */
+function tokenMatches(presented: string, expected: Buffer): boolean {
+  const bytes = Buffer.from(presented);
+  const padded = Buffer.alloc(expected.length);
+  bytes.copy(padded);
+  return timingSafeEqual(padded, expected) && bytes.length === expected.length;
 }
 
 function presentedToken(c: Context): string | null {
@@ -59,13 +67,12 @@ export type FormatOf = ApiFormat | ((c: Context) => ApiFormat);
  * every route, before any body is read.
  */
 export function access(formatOf: FormatOf, options: AccessOptions): MiddlewareHandler {
-  const expected = options.token === null ? null : digest(options.token);
+  const expected = options.token === null ? null : Buffer.from(options.token);
   return async (c, next) => {
     const format = typeof formatOf === "function" ? formatOf(c) : formatOf;
     if (expected !== null) {
       const token = presentedToken(c);
-      // Compare fixed-length digests so the check takes the same time for any input.
-      if (token === null || !timingSafeEqual(digest(token), expected)) {
+      if (token === null || !tokenMatches(token, expected)) {
         return reject(c, format, 401, "authentication", "Missing or invalid switchkick token.");
       }
     } else {
