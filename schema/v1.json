@@ -6,6 +6,14 @@
       "description": "JSON Schema URL, for editor support.",
       "type": "string"
     },
+    "preset": {
+      "description": "A built-in set of models for `tiers`, `trusted` and hosted mode's lists, which the settings in this file override. `claude-only` uses Anthropic models only, as Claude Code needs, and keeps hosted mode on them too. `multi-provider` mixes providers. Without a preset, tiers are Claude models and hosted mode has no lists.",
+      "type": "string",
+      "enum": [
+        "claude-only",
+        "multi-provider"
+      ]
+    },
     "mode": {
       "default": "static",
       "description": "How requests are routed. `static` sends every request to `defaultTier`. `hosted` lets OpenRouter's Jev router choose the model, configured by `hosted`. `local` asks Jev which tier each human turn needs, and applies `policy`.",
@@ -32,7 +40,7 @@
       "type": "object",
       "properties": {
         "fast": {
-          "description": "Defaults to { model: anthropic/claude-haiku-5.5 }.",
+          "description": "Defaults to the preset's model, or { model: anthropic/claude-haiku-5.5 } without one.",
           "type": "object",
           "properties": {
             "model": {
@@ -58,7 +66,7 @@
           "additionalProperties": false
         },
         "balanced": {
-          "description": "Defaults to { model: anthropic/claude-sonnet-5.5 }.",
+          "description": "Defaults to the preset's model, or { model: anthropic/claude-sonnet-5.5 } without one.",
           "type": "object",
           "properties": {
             "model": {
@@ -84,7 +92,7 @@
           "additionalProperties": false
         },
         "frontier": {
-          "description": "Defaults to { model: anthropic/claude-opus-5.5 }.",
+          "description": "Defaults to the preset's model, or { model: anthropic/claude-opus-5.5 } without one.",
           "type": "object",
           "properties": {
             "model": {
@@ -113,7 +121,7 @@
       "additionalProperties": false
     },
     "trusted": {
-      "description": "Local mode: the model for every request in a session where a secret (an API key, a private key, a password) was seen. Defaults to { model: anthropic/claude-sonnet-5.5 }.",
+      "description": "Local mode: the model for every request in a session where a secret (an API key, a private key, a password) was seen. Defaults to the preset's, or { model: anthropic/claude-sonnet-5.5 } without one.",
       "type": "object",
       "properties": {
         "model": {
@@ -304,8 +312,6 @@
     "hosted": {
       "default": {
         "cost_tier": "medium",
-        "models": [],
-        "excluded_models": [],
         "unsupportedReasoning": "strip"
       },
       "description": "Hosted mode settings.",
@@ -322,8 +328,7 @@
           ]
         },
         "models": {
-          "default": [],
-          "description": "Models the router should prefer: slugs, wildcards such as `anthropic/*`, or `~author/family-latest` aliases. A preference only: if none of them is in the router's pool, the router ignores the list. Use local mode for a strict allowlist.",
+          "description": "Models the router should prefer: slugs, wildcards such as `anthropic/*`, or `~author/family-latest` aliases. A preference only: if none of them is in the router's pool, the router ignores the list. Use local mode for a strict allowlist. Defaults to the preset's list, or none.",
           "maxItems": 1024,
           "type": "array",
           "items": {
@@ -333,8 +338,7 @@
           }
         },
         "excluded_models": {
-          "default": [],
-          "description": "Models the router must never pick, in the same pattern syntax. The only hard restriction: if it excludes every candidate, requests fail with 404.",
+          "description": "Models the router must never pick, in the same pattern syntax. The only hard restriction: if it excludes every candidate, requests fail with 404. Defaults to the preset's list, or none.",
           "maxItems": 1024,
           "type": "array",
           "items": {

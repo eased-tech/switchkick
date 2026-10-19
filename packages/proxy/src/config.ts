@@ -17,7 +17,14 @@ import {
 } from "@switchkick/jev";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { COST_TIERS, ModelPatterns, UNSUPPORTED_REASONING } from "./hosted.js";
+import {
+  COST_TIERS,
+  type CostTier,
+  ModelPatterns,
+  UNSUPPORTED_REASONING,
+  type UnsupportedReasoning,
+} from "./hosted.js";
+import { PRESETS, presetModels } from "./presets.js";
 import { DEFAULT_TIER_MODELS } from "./tiers.js";
 
 export const CONFIG_SCHEMA_URL = "https://eased-tech.github.io/switchkick/schema/v1.json";
@@ -63,13 +70,24 @@ const Probability = z.number().min(0).max(1);
 const tierTargets = Object.fromEntries(
   TIERS.map((tier) => [
     tier,
-    TierTarget.optional().describe(`Defaults to { model: ${DEFAULT_TIER_MODELS[tier]} }.`),
+    TierTarget.optional().describe(
+      `Defaults to the preset's model, or { model: ${DEFAULT_TIER_MODELS[tier]} } without one.`,
+    ),
   ]),
 ) as Record<Tier, z.ZodOptional<typeof TierTarget>>;
 
 export const ConfigSchema = z
   .strictObject({
     $schema: z.string().optional().describe("JSON Schema URL, for editor support."),
+    preset: z
+      .enum(PRESETS)
+      .optional()
+      .describe(
+        "A built-in set of models for `tiers`, `trusted` and hosted mode's lists, which the " +
+          "settings in this file override. `claude-only` uses Anthropic models only, as Claude " +
+          "Code needs, and keeps hosted mode on them too. `multi-provider` mixes providers. " +
+          "Without a preset, tiers are Claude models and hosted mode has no lists.",
+      ),
     mode: z
       .enum(MODES)
       .default("static")
@@ -91,7 +109,8 @@ export const ConfigSchema = z
       .describe("Model per tier. A tier given here replaces the built-in one entirely."),
     trusted: TierTarget.optional().describe(
       "Local mode: the model for every request in a session where a secret (an API key, a " +
-        `private key, a password) was seen. Defaults to { model: ${DEFAULT_TIER_MODELS.balanced} }.`,
+        "private key, a password) was seen. Defaults to the preset's, or " +
+        `{ model: ${DEFAULT_TIER_MODELS.balanced} } without one.`,
     ),
     policy: z
       .strictObject({
@@ -227,14 +246,16 @@ export const ConfigSchema = z
           .enum(COST_TIERS)
           .default("medium")
           .describe("The router's spend policy. Higher tiers pick more capable, costlier models."),
-        models: ModelPatterns.default([]).describe(
+        models: ModelPatterns.optional().describe(
           "Models the router should prefer: slugs, wildcards such as `anthropic/*`, or " +
             "`~author/family-latest` aliases. A preference only: if none of them is in the " +
-            "router's pool, the router ignores the list. Use local mode for a strict allowlist.",
+            "router's pool, the router ignores the list. Use local mode for a strict allowlist. " +
+            "Defaults to the preset's list, or none.",
         ),
-        excluded_models: ModelPatterns.default([]).describe(
+        excluded_models: ModelPatterns.optional().describe(
           "Models the router must never pick, in the same pattern syntax. The only hard " +
-            "restriction: if it excludes every candidate, requests fail with 404.",
+            "restriction: if it excludes every candidate, requests fail with 404. Defaults to " +
+            "the preset's list, or none.",
         ),
         unsupportedReasoning: z
           .enum(UNSUPPORTED_REASONING)
@@ -244,12 +265,7 @@ export const ConfigSchema = z
               "router rejects: `strip` drops them and notes it in the log, `reject` answers 400.",
           ),
       })
-      .default({
-        cost_tier: "medium",
-        models: [],
-        excluded_models: [],
-        unsupportedReasoning: "strip",
-      })
+      .default({ cost_tier: "medium", unsupportedReasoning: "strip" })
       .describe("Hosted mode settings."),
     attribution: z
       .boolean()
@@ -289,18 +305,34 @@ export interface TierTargetConfig {
   effort?: Effort;
 }
 
-/** Built-in tiers, with any tier from the config file replacing its built-in counterpart. */
+/** The preset's tiers, with any tier from the config file replacing its preset counterpart. */
 export function resolveTiers(config: Config): Record<Tier, TierTargetConfig> {
+  const preset = presetModels(config.preset);
   return Object.fromEntries(
-    TIERS.map((tier) => [tier, config.tiers[tier] ?? { model: DEFAULT_TIER_MODELS[tier] }]),
+    TIERS.map((tier) => [tier, config.tiers[tier] ?? preset.tiers[tier]]),
   ) as Record<Tier, TierTargetConfig>;
 }
 
-/** The trusted target, falling back to the built-in balanced model. */
+/** The trusted target, falling back to the preset's. */
 export function resolveTrusted(config: Config): TierTargetConfig {
-  return (
-    (config.trusted as TierTargetConfig | undefined) ?? { model: DEFAULT_TIER_MODELS.balanced }
-  );
+  return (config.trusted as TierTargetConfig | undefined) ?? presetModels(config.preset).trusted;
+}
+
+export interface HostedConfig {
+  cost_tier: CostTier;
+  models: string[];
+  excluded_models: string[];
+  unsupportedReasoning: UnsupportedReasoning;
+}
+
+/** Hosted mode's settings, with the preset's lists where the config file sets none. */
+export function resolveHosted(config: Config): HostedConfig {
+  const preset = presetModels(config.preset);
+  return {
+    ...config.hosted,
+    models: config.hosted.models ?? preset.hosted.models,
+    excluded_models: config.hosted.excluded_models ?? preset.hosted.excluded_models,
+  };
 }
 
 /** The core routing policy for a config's `defaultTier` and `policy` settings. */

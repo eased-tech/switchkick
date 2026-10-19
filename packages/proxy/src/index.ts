@@ -7,6 +7,15 @@ export {
   VERSION,
 } from "./app.js";
 export {
+  CLIENTS,
+  type Client,
+  clientEnv,
+  type Endpoint,
+  endpointUrl,
+  wireClaude,
+  wireCodex,
+} from "./clients.js";
+export {
   CONFIG_SCHEMA_URL,
   type Config,
   ConfigError,
@@ -20,6 +29,7 @@ export {
   MODES,
   type Mode,
   parseConfig,
+  resolveHosted,
   resolvePolicy,
   resolveTiers,
   resolveTrusted,
@@ -76,10 +86,18 @@ export {
   createScanner,
   type RouterCandidate,
   type RouterDecision,
+  readUsage,
   routerDecision,
   type ScanResult,
+  type Usage,
 } from "./metadata.js";
+export {
+  PRESET_MODELS,
+  PRESETS,
+  type Preset,
+} from "./presets.js";
 export { type RunIo, type RunResult, resolveSettings, run, type ServeSettings } from "./run.js";
+export type { CommandOutput, System } from "./system.js";
 export { DEFAULT_TIER_MODELS } from "./tiers.js";
 export { estimateInputTokens } from "./tokens.js";
 export { analyzeTurn, SIDE_CALL_MAX_TOKENS, type TurnInfo } from "./turns.js";

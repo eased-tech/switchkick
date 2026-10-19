@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { configDir } from "./config.js";
+import { exec, type System } from "./system.js";
 
 /** The credential-store entry switchkick reads, and `setup` will write. */
 export const KEY_SERVICE = "switchkick";
@@ -34,27 +34,15 @@ export class CredentialError extends Error {
   override name = "CredentialError";
 }
 
-/** Long enough for someone to answer a macOS Keychain access prompt. */
-const STORE_TIMEOUT_MS = 60_000;
-
 export function defaultCredentialDeps(env: NodeJS.ProcessEnv = process.env): CredentialDeps {
   return {
     env,
     platform: process.platform,
-    run: (command, args) =>
-      new Promise((resolve) => {
-        execFile(
-          command,
-          args,
-          { timeout: STORE_TIMEOUT_MS, encoding: "utf8", windowsHide: true },
-          (error, stdout) => {
-            if (!error) return resolve({ code: 0, stdout, timedOut: false });
-            if ((error as NodeJS.ErrnoException).code === "ENOENT") return resolve(null);
-            const code = typeof error.code === "number" ? error.code : -1;
-            resolve({ code, stdout: "", timedOut: error.killed === true });
-          },
-        );
-      }),
+    run: async (command, args) => {
+      const result = await exec(command, args);
+      // Only a successful lookup's output is kept: a failure's could still hold the secret.
+      return result && { ...result, stdout: result.code === 0 ? result.stdout : "" };
+    },
     readFile: (path) => readFile(path, "utf8"),
     fileMode: (path) =>
       stat(path).then(
@@ -171,4 +159,133 @@ export async function findApiKey(
   throw new CredentialError(
     `No OpenRouter API key found. Tried:\n${tried.map((t) => `  - ${t}`).join("\n")}`,
   );
+}
+
+/** The credential store switchkick uses on this platform, or null where there is none. */
+export function credentialStoreName(platform: NodeJS.Platform): string | null {
+  return credentialStore(platform)?.name ?? null;
+}
+
+/** {@link CredentialDeps} backed by a {@link System}, so tests never reach the real store. */
+export function systemCredentialDeps(system: System, env = system.env): CredentialDeps {
+  return {
+    env,
+    platform: system.platform,
+    run: async (command, args) => {
+      const result = await system.exec(command, args);
+      return result && { ...result, stdout: result.code === 0 ? result.stdout : "" };
+    },
+    readFile: (path) => readFile(path, "utf8"),
+    fileMode: (path) =>
+      stat(path).then(
+        (s) => s.mode & 0o777,
+        () => null,
+      ),
+  };
+}
+
+/**
+ * The key a background service would find: the credential store or the env file, ignoring
+ * `OPENROUTER_API_KEY`, which a service doesn't inherit. Null when neither has one.
+ */
+export async function findStoredKey(system: System): Promise<FoundKey | null> {
+  const { OPENROUTER_API_KEY: _, ...env } = system.env;
+  try {
+    return await findApiKey(systemCredentialDeps(system, env));
+  } catch (error) {
+    if (error instanceof CredentialError) return null;
+    throw error;
+  }
+}
+
+/** Characters an OpenRouter key can contain. Anything else is refused rather than quoted. */
+const KEY_PATTERN = /^[A-Za-z0-9._-]{8,512}$/;
+
+/**
+ * What's wrong with a pasted key, or null if it looks like one. `fatal` problems mean it can't be
+ * stored. Never quotes the key.
+ */
+export function keyProblem(key: string): { message: string; fatal: boolean } | null {
+  if (!KEY_PATTERN.test(key)) {
+    return {
+      message: "that isn't an OpenRouter key: expected 8 or more letters, digits, '.', '_' or '-'",
+      fatal: true,
+    };
+  }
+  if (!key.startsWith("sk-or-")) {
+    return { message: "OpenRouter keys usually start with sk-or-", fatal: false };
+  }
+  return null;
+}
+
+/** Writes the env file with only the key, readable by the user alone. */
+async function writeEnvFile(path: string, key: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.tmp`;
+  await writeFile(temporary, `OPENROUTER_API_KEY=${key}\n`, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
+}
+
+/**
+ * Stores the key where {@link findApiKey} looks: the OS credential store when it works, otherwise
+ * the env file. The key never appears in a command line, where other processes could see it:
+ * `security` reads its command from stdin (`-i`), and `secret-tool` reads the secret from stdin.
+ * Returns where the key went.
+ */
+export async function storeApiKey(system: System, key: string): Promise<string> {
+  if (!KEY_PATTERN.test(key)) throw new CredentialError("Refusing to store a malformed key.");
+  const store = credentialStore(system.platform);
+  if (system.platform === "darwin" && store) {
+    const result = await system.exec(
+      "security",
+      ["-i"],
+      `add-generic-password -U -s ${KEY_SERVICE} -a ${KEY_ACCOUNT} -l switchkick -w "${key}"\n`,
+    );
+    if (result?.code === 0 && !/error/i.test(result.stderr)) return store.name;
+  } else if (system.platform === "linux" && store) {
+    const result = await system.exec(
+      "secret-tool",
+      ["store", "--label=switchkick", "service", KEY_SERVICE, "account", KEY_ACCOUNT],
+      key,
+    );
+    if (result?.code === 0) return store.name;
+  }
+  const path = envFilePath(system.env);
+  await writeEnvFile(path, key);
+  return path;
+}
+
+/** Removes the key from the credential store and the env file. Returns what was removed. */
+export async function deleteApiKey(system: System): Promise<string[]> {
+  const removed: string[] = [];
+  const store = credentialStore(system.platform);
+  if (store && system.platform === "darwin") {
+    const result = await system.exec("security", [
+      "delete-generic-password",
+      "-s",
+      KEY_SERVICE,
+      "-a",
+      KEY_ACCOUNT,
+    ]);
+    if (result?.code === 0) removed.push(store.name);
+  } else if (store && system.platform === "linux") {
+    const before = await system.exec(store.command, store.args);
+    if (before?.code === 0 && before.stdout.trim() !== "") {
+      const result = await system.exec("secret-tool", [
+        "clear",
+        "service",
+        KEY_SERVICE,
+        "account",
+        KEY_ACCOUNT,
+      ]);
+      if (result?.code === 0) removed.push(store.name);
+    }
+  }
+  const path = envFilePath(system.env);
+  if ((await stat(path).catch(() => null)) !== null) {
+    await rm(path, { force: true });
+    removed.push(path);
+  }
+  return removed;
 }

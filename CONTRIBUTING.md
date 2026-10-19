@@ -38,6 +38,7 @@ packages/core    pure routing policy, no I/O
 packages/jev     Jev Decisions API client
 packages/proxy   the `switchkick` CLI and HTTP server
 docs/adr/        architecture decision records
+eval/            labelled prompts for `switchkick eval` (synthetic, never real sessions)
 scripts/spikes/  scripts that call live APIs (need OPENROUTER_API_KEY)
 ```
 

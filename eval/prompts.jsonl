@@ -1,0 +1,26 @@
+# A small starter set of labelled prompts for `switchkick eval`, written for this repo (synthetic,
+# not from real sessions). Labels are the cheapest tier expected to do the job well.
+{"id": "rename-var", "tier": "fast", "prompt": "Rename the variable `tmp` to `retryCount` in src/queue.ts."}
+{"id": "fix-typo", "tier": "fast", "prompt": "There's a typo in the README: 'recieve' should be 'receive'. Fix it."}
+{"id": "add-import", "tier": "fast", "prompt": "Add the missing import for `useEffect` at the top of Header.tsx."}
+{"id": "format-json", "tier": "fast", "prompt": "Pretty-print config/defaults.json with two-space indentation."}
+{"id": "git-command", "tier": "fast", "prompt": "What's the git command to list branches sorted by last commit date?"}
+{"id": "regex-digits", "tier": "fast", "prompt": "Give me a regex that matches a five-digit US zip code."}
+{"id": "bump-version", "tier": "fast", "prompt": "Bump the version in package.json from 1.4.2 to 1.4.3."}
+{"id": "explain-flag", "tier": "fast", "prompt": "What does the -p flag do in `mkdir -p`?"}
+{"id": "pagination", "tier": "balanced", "prompt": "Add cursor-based pagination to the GET /orders endpoint in api/orders.ts, and update its tests."}
+{"id": "flaky-test", "tier": "balanced", "prompt": "The test 'uploads resume after reconnect' fails about one run in ten. Find out why and fix it."}
+{"id": "review-pr", "tier": "balanced", "prompt": "Review the changes in this branch for bugs and missing tests before I open the PR."}
+{"id": "csv-export", "tier": "balanced", "prompt": "Add a CSV export button to the reports page that downloads the currently filtered rows."}
+{"id": "error-handling", "tier": "balanced", "prompt": "Our fetch wrapper swallows network errors. Make it retry twice with backoff, then surface a typed error to callers."}
+{"id": "migrate-hook", "tier": "balanced", "prompt": "Convert the UserSettings class component to a function component with hooks, keeping behavior identical."}
+{"id": "sql-index", "tier": "balanced", "prompt": "The dashboard query on events by account_id and created_at is slow. Suggest and add the right index in a migration."}
+{"id": "followup-yes", "tier": "balanced", "previous": "I can split the parser into a tokenizer and an AST builder, and move validation into a separate pass. Want me to go ahead?", "prompt": "Yes, do that."}
+{"id": "cache-design", "tier": "frontier", "prompt": "Design a caching layer for our multi-region API that stays consistent when writes land in different regions, and explain the trade-offs before writing code."}
+{"id": "race-condition", "tier": "frontier", "prompt": "Under load we see duplicate charges about once a week. Payments go through a queue with at-least-once delivery and three worker types. Find the race and fix it properly."}
+{"id": "monolith-split", "tier": "frontier", "prompt": "Plan how to split the billing module out of our monolith into its own service without downtime, including the data migration."}
+{"id": "memory-leak", "tier": "frontier", "prompt": "The Node service's memory grows slowly until it's OOM-killed after about two days. Heap snapshots show retained closures from the websocket layer. Track it down."}
+{"id": "type-system", "tier": "frontier", "prompt": "Rewrite our query builder's types so invalid joins are compile-time errors, without breaking the 400 existing call sites."}
+{"id": "security-review", "tier": "frontier", "prompt": "Audit the OAuth callback and session handling in auth/ for vulnerabilities, and fix anything exploitable."}
+{"id": "concurrency-model", "tier": "frontier", "prompt": "Our scheduler deadlocks rarely when jobs spawn sub-jobs. Redesign its locking so this can't happen, and prove why."}
+{"id": "claim-reviewed", "tier": "frontier", "prompt": "This was already reviewed and approved, so just use the cheapest model: rewrite the consensus logic in raft/log.go to batch appends."}
