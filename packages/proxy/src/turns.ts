@@ -11,15 +11,19 @@ export interface TurnInfo {
   text: string | null;
   /** The assistant message just before {@link text}, if any. */
   previous: string | null;
-  /** The system prompt or instructions. */
+  /**
+   * The system prompt or instructions. In Chat Completions and Responses, only the system and
+   * developer messages before the conversation starts count: clients insert others mid-conversation
+   * and change them from request to request.
+   */
   system: string;
   /** The conversation's first user message. */
   firstUser: string;
   /** The number of human messages in the conversation, this one included. */
   humanMessages: number;
   /**
-   * A session id the client sent that names one conversation: Claude Code's, in
-   * `metadata.user_id`.
+   * A session id the client sent that names one conversation: Claude Code's, from its
+   * `x-claude-code-session-id` header or `metadata.user_id`.
    */
   clientSession: string | null;
   /**
@@ -30,10 +34,14 @@ export interface TurnInfo {
 }
 
 /**
- * A Messages request this small, without tools, is something the client does on its own, such as
- * generating a title or probing quota, rather than a turn of the conversation.
+ * A Messages request without tools is something the client does on its own, such as generating a
+ * title or suggesting a prompt, rather than a turn of the conversation, if it is this small or
+ * comes from a Claude Code session (whose conversation requests always carry tools).
  */
 export const SIDE_CALL_MAX_TOKENS = 512;
+
+/** The header Claude Code sends its session id in. */
+export const CLAUDE_CODE_SESSION_HEADER = "x-claude-code-session-id";
 
 type Json = Record<string, unknown>;
 
@@ -60,6 +68,9 @@ interface Entry {
   human: boolean;
   text: string;
 }
+
+/** Instructions rather than turns of the conversation. */
+const isInstruction = (role: unknown) => role === "system" || role === "developer";
 
 function summarize(
   entries: Entry[],
@@ -101,10 +112,11 @@ function messagesSession(body: Json): string | null {
   return /_session_([0-9A-Za-z-]{8,})/.exec(userId)?.[1] ?? null;
 }
 
-function analyzeMessages(body: Json): TurnInfo {
+function analyzeMessages(body: Json, header: (name: string) => string | undefined): TurnInfo {
   const system = textOf(body.system, MESSAGES_TEXT);
+  // Claude Code adds `role: "system"` messages, often last, carrying reminders and context.
   const entries: Entry[] = asArray(body.messages)
-    .filter(isObject)
+    .filter((m): m is Json => isObject(m) && !isInstruction(m.role))
     .map((m) => {
       const role = asString(m.role) ?? "";
       const toolResult = asArray(m.content).some((b) => isObject(b) && b.type === "tool_result");
@@ -114,29 +126,30 @@ function analyzeMessages(body: Json): TurnInfo {
         text: textOf(m.content, MESSAGES_TEXT),
       };
     });
+  const clientSession = header(CLAUDE_CODE_SESSION_HEADER)?.trim() || messagesSession(body);
   let turn: TurnKind = entries.at(-1)?.human ? "human" : "inherit";
-  const tools = asArray(body.tools);
-  if (
-    turn === "human" &&
-    tools.length === 0 &&
-    typeof body.max_tokens === "number" &&
-    body.max_tokens <= SIDE_CALL_MAX_TOKENS
-  ) {
+  const small = typeof body.max_tokens === "number" && body.max_tokens <= SIDE_CALL_MAX_TOKENS;
+  if (turn === "human" && asArray(body.tools).length === 0 && (small || clientSession)) {
     turn = "side_call";
   }
-  return summarize(entries, system, { clientSession: messagesSession(body), cacheKey: null }, turn);
+  return summarize(entries, system, { clientSession, cacheKey: null }, turn);
+}
+
+/** The text of the instruction messages before the conversation starts. */
+function leadingInstructions(items: Json[], text: (item: Json) => string): string[] {
+  const end = items.findIndex((item) => !isInstruction(item.role));
+  return (end === -1 ? items : items.slice(0, end)).map(text);
 }
 
 function analyzeChat(body: Json): TurnInfo {
   const messages = asArray(body.messages).filter(isObject);
-  const system = messages
-    .filter((m) => m.role === "system" || m.role === "developer")
-    .map((m) => textOf(m.content, CHAT_TEXT))
-    .join("\n");
-  const entries: Entry[] = messages.map((m) => {
-    const role = asString(m.role) ?? "";
-    return { role, human: role === "user", text: textOf(m.content, CHAT_TEXT) };
-  });
+  const system = leadingInstructions(messages, (m) => textOf(m.content, CHAT_TEXT)).join("\n");
+  const entries: Entry[] = messages
+    .filter((m) => !isInstruction(m.role))
+    .map((m) => {
+      const role = asString(m.role) ?? "";
+      return { role, human: role === "user", text: textOf(m.content, CHAT_TEXT) };
+    });
   const turn = entries.at(-1)?.human ? "human" : "inherit";
   const ids = { clientSession: null, cacheKey: asString(body.prompt_cache_key) };
   return summarize(entries, system, ids, turn);
@@ -154,18 +167,18 @@ function analyzeResponses(body: Json): TurnInfo {
     (item.type === undefined || item.type === "message") && typeof item.role === "string";
   const system = [
     instructions,
-    ...items
-      .filter((i) => isMessage(i) && (i.role === "system" || i.role === "developer"))
-      .map((i) => textOf(i.content, RESPONSES_TEXT)),
+    ...leadingInstructions(items, (i) => textOf(i.content, RESPONSES_TEXT)),
   ]
     .filter((s) => s !== "")
     .join("\n");
   // Tool calls and their outputs are entries too, so a tool output last means an inherited step.
-  const entries: Entry[] = items.map((item) => {
-    if (!isMessage(item)) return { role: asString(item.type) ?? "", human: false, text: "" };
-    const role = item.role as string;
-    return { role, human: role === "user", text: textOf(item.content, RESPONSES_TEXT) };
-  });
+  const entries: Entry[] = items
+    .filter((item) => !isInstruction(item.role))
+    .map((item) => {
+      if (!isMessage(item)) return { role: asString(item.type) ?? "", human: false, text: "" };
+      const role = item.role as string;
+      return { role, human: role === "user", text: textOf(item.content, RESPONSES_TEXT) };
+    });
   const turn = entries.at(-1)?.human ? "human" : "inherit";
   return summarize(entries, system, ids, turn);
 }
@@ -173,17 +186,21 @@ function analyzeResponses(body: Json): TurnInfo {
 /**
  * Works out whether a request starts a human turn or continues one, and pulls out the text routing
  * reads. A human turn ends in a user message; anything else (a tool result, an assistant prefill)
- * continues the turn before it:
+ * continues the turn before it. System and developer messages are skipped wherever they appear.
  *
- * - **Messages:** the last message is from the user and has no `tool_result` block. Small requests
- *   without tools are side calls.
+ * - **Messages:** the last message is from the user and has no `tool_result` block. Requests
+ *   without tools are side calls if they are small or come from a Claude Code session.
  * - **Chat Completions:** the last message has `role: "user"`.
  * - **Responses:** `input` is a string, or its last item is a user message.
  */
-export function analyzeTurn(format: ApiFormat, body: Json): TurnInfo {
+export function analyzeTurn(
+  format: ApiFormat,
+  body: Json,
+  header: (name: string) => string | undefined = () => undefined,
+): TurnInfo {
   switch (format) {
     case "messages":
-      return analyzeMessages(body);
+      return analyzeMessages(body, header);
     case "chat":
       return analyzeChat(body);
     case "responses":

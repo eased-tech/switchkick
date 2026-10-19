@@ -198,6 +198,51 @@ describe("local mode", () => {
     );
   });
 
+  it("replays a captured Claude Code 2.1 run: one Jev call, side call and subagent inherit", async () => {
+    // The request sequence Claude Code 2.1.303 sent for "list the files, then have a subagent
+    // count README lines", reduced to its shape.
+    const jev = fakeJev("frontier", "fast");
+    const { log } = await setup({ jev });
+    const headers = { "x-claude-code-session-id": "e88e3442-0000-4000-8000-000000000000" };
+    const reminder = { role: "system", content: [{ type: "text", text: "<context>" }] };
+    const main = (messages: unknown[]) =>
+      claudeCode(messages, { metadata: undefined, model: "claude-opus-5-5" });
+    const agent = (messages: unknown[]) =>
+      claudeCode(messages, {
+        metadata: undefined,
+        model: "claude-opus-5-5",
+        system: [{ type: "text", text: "You are a general-purpose agent." }],
+      });
+    const prompt = { role: "user", content: "list the files, then have a subagent count lines" };
+    const send = (body: unknown) =>
+      routed("/v1/messages", body, headers).then((sent) => sent.model);
+
+    // A tool-less side request races the first main request.
+    const side = {
+      model: "claude-opus-5-5",
+      max_tokens: 128000,
+      system: [{ type: "text", text: "Suggest a follow-up." }],
+      messages: [{ role: "user", content: "<conversation summary>" }],
+    };
+    const models = await Promise.all([send(side), send(main([prompt, reminder]))]);
+    models.push(await send(main([prompt, reminder, toolUse("t1"), toolResult("t1")])));
+    const task = { role: "user", content: "Count the lines in README.md" };
+    models.push(await send(agent([task, reminder])));
+    models.push(await send(agent([task, reminder, toolUse("a1"), toolResult("a1"), reminder])));
+    models.push(
+      await send(
+        main([prompt, reminder, toolUse("t1"), toolResult("t1"), toolUse("t2"), toolResult("t2")]),
+      ),
+    );
+
+    expect(jev.calls).toHaveLength(1);
+    expect(jev.calls[0]?.state).toEqual({ latest_user_message: prompt.content });
+    expect(models.slice(1)).toEqual(Array(5).fill("test/frontier"));
+    await eventually(() => expect(log.entries).toHaveLength(6));
+    const turns = log.entries.map((e) => e.turn).sort();
+    expect(turns).toEqual(["human", "inherit", "inherit", "inherit", "side_call", "subagent"]);
+  });
+
   it("routes side calls without asking Jev", async () => {
     const jev = fakeJev("frontier");
     await setup({ jev });

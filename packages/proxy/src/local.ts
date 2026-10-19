@@ -165,7 +165,7 @@ export function createLocalRouter(options: LocalRoute, envTier: Tier | null = nu
   return {
     sessions,
     async route({ format, body, header, signal }) {
-      const info = analyzeTurn(format, body);
+      const info = analyzeTurn(format, body, header);
       const named = header(SESSION_HEADER)?.trim() || info.clientSession;
       const credential = header("authorization") ?? header("x-api-key") ?? "";
       const key = sha256(

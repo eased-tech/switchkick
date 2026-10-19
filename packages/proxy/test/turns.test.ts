@@ -90,6 +90,62 @@ describe("analyzeTurn: Anthropic Messages", () => {
     expect(info.clientSession).toBe(session);
   });
 
+  describe("as Claude Code 2.1 sends them", () => {
+    const session = "0b3a0d74-97c4-4b63-b1b4-0e0fb2963496";
+    const header = (name: string) => (name === "x-claude-code-session-id" ? session : undefined);
+    const reminder = { role: "system", content: [{ type: "text", text: "<context>" }] };
+
+    it("skips the trailing system message when reading a human turn", () => {
+      const info = analyzeTurn(
+        "messages",
+        { ...base, messages: [{ role: "user", content: "list the files" }, reminder] },
+        header,
+      );
+      expect(info).toMatchObject({
+        turn: "human",
+        text: "list the files",
+        humanMessages: 1,
+        system: "You are a coding agent.",
+        clientSession: session,
+      });
+    });
+
+    it("reads a tool result followed by a system message as an inherited step", () => {
+      const info = analyzeTurn("messages", {
+        ...base,
+        messages: [
+          { role: "user", content: "list the files" },
+          reminder,
+          { role: "assistant", content: [toolUse] },
+          { role: "user", content: [toolResult] },
+          reminder,
+        ],
+      });
+      expect(info).toMatchObject({ turn: "inherit", text: "list the files" });
+    });
+
+    it("reads a request without tools in a Claude Code session as a side call, at any size", () => {
+      const info = analyzeTurn(
+        "messages",
+        {
+          model: "claude-opus-5-5",
+          max_tokens: 128000,
+          messages: [{ role: "user", content: "x" }],
+        },
+        header,
+      );
+      expect(info.turn).toBe("side_call");
+    });
+
+    it("still reads a large request without tools from another client as a human turn", () => {
+      const info = analyzeTurn("messages", {
+        max_tokens: 4096,
+        messages: [{ role: "user", content: "write a poem" }],
+      });
+      expect(info.turn).toBe("human");
+    });
+  });
+
   it("copes with a body that has no messages", () => {
     expect(analyzeTurn("messages", {})).toMatchObject({ turn: "inherit", text: null });
   });
@@ -124,6 +180,38 @@ describe("analyzeTurn: Chat Completions", () => {
       messages: [{ role: "user", content: "compute it" }, last],
     });
     expect(info).toMatchObject({ turn: "inherit", text: "compute it" });
+  });
+});
+
+describe("analyzeTurn: system messages mid-conversation", () => {
+  it("leave Chat Completions turns and the system prompt alone", () => {
+    const info = analyzeTurn("chat", {
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi" },
+        { role: "user", content: "and now?" },
+        { role: "system", content: "reminder that changes every request" },
+      ],
+    });
+    expect(info).toMatchObject({
+      turn: "human",
+      text: "and now?",
+      previous: "hi",
+      system: "Be brief.",
+      humanMessages: 2,
+    });
+  });
+
+  it("leave Responses turns and the instructions alone", () => {
+    const info = analyzeTurn("responses", {
+      instructions: "sys",
+      input: [
+        { role: "user", content: "go" },
+        { role: "developer", content: "late note" },
+      ],
+    });
+    expect(info).toMatchObject({ turn: "human", text: "go", system: "sys" });
   });
 });
 

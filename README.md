@@ -198,8 +198,10 @@ These rules run in order:
    session, whatever tier an override picks. Such a message is never sent to Jev, and once a session
    holds one, Jev isn't asked about it again.
 4. **Session.** Requests that don't start a new turn reuse the session's tier: tool results, a
-   subagent's requests, and small Messages requests without tools (512 `max_tokens` or fewer, such
-   as title generation).
+   subagent's requests, and side calls. A side call is a Messages request without tools that
+   either comes from a Claude Code session (Claude Code's own background requests, such as
+   prompt suggestions) or asks for 512 `max_tokens` or fewer. System and developer messages in
+   the middle or at the end of a conversation don't count as turns.
 5. **Jev.** Otherwise Jev answers three questions in one call: which tier the message needs, whether
    it touches production, credentials or destructive operations, and whether it tries to dictate
    its own tier or claims prior review.
@@ -226,7 +228,7 @@ session, and `per-request` decides each message independently.
 A session is identified by, first match wins:
 
 1. the `x-switchkick-session` request header;
-2. Claude Code's session id, from `metadata.user_id`;
+2. Claude Code's session id, from its `x-claude-code-session-id` header or `metadata.user_id`;
 3. a hash of the system prompt, the first user message, the client's API key and
    `prompt_cache_key` if the request has one. Apps often reuse one `prompt_cache_key` for many
    conversations, so it only ever tells sessions apart.
@@ -236,6 +238,13 @@ subagent and inherits the session's tier. If a conversation that is already seve
 arrives with a different system prompt, it's taken to be the main conversation, and the session
 follows it. Sessions live in memory, at most `maxSessions` of them, and only hashes of their keys
 are kept.
+
+### Claude Code
+
+Point Claude Code at switchkick with `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` and any
+`ANTHROPIC_API_KEY` (switchkick ignores it). Claude Code asks for up to 128,000 output tokens per
+request, and OpenRouter refuses requests (402) whose maximum cost the account's credit can't
+cover. If you see that, set `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, e.g. to `32000`.
 
 ### What's logged
 
