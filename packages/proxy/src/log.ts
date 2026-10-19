@@ -1,0 +1,107 @@
+import { appendFile, mkdir, rename, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import type { Tier } from "@switchkick/core";
+import type { ApiFormat } from "./formats.js";
+
+/**
+ * One line of the decision log, written per request. It records how the request was routed and
+ * what came back, and never any prompt or response content.
+ */
+export interface DecisionLogEntry {
+  /** ISO 8601 timestamp of when the request arrived. */
+  ts: string;
+  format: ApiFormat;
+  stream: boolean;
+  mode: "static";
+  tier: Tier;
+  /** The `model` the client asked for, before switchkick rewrote it. */
+  requestedModel: string | null;
+  /** The model switchkick sent upstream. */
+  model: string;
+  reason: string;
+  /** The HTTP status returned to the client. 499 means the client disconnected first. */
+  status: number;
+  /** OpenRouter's `x-generation-id`, for looking the request up later. */
+  generationId: string | null;
+  /** Time from receiving the request to OpenRouter's response headers. */
+  upstreamMs: number | null;
+  /** Set when switchkick answered with its own error instead of OpenRouter's response. */
+  error?: string;
+  /** Changes switchkick made to the request beyond the model, e.g. `store_rewritten`. */
+  warnings?: string[];
+}
+
+export interface DecisionLog {
+  /** Must never throw: a logging failure can't be allowed to fail a request. */
+  write(entry: DecisionLogEntry): void;
+}
+
+export const DEFAULT_LOG_MAX_BYTES = 50 * 1024 * 1024;
+
+/** `$XDG_STATE_HOME/switchkick/decisions.jsonl`, falling back to `~/.local/state`. */
+export function defaultLogPath(env: NodeJS.ProcessEnv = process.env): string {
+  const stateHome = env.XDG_STATE_HOME || join(homedir(), ".local", "state");
+  return join(stateHome, "switchkick", "decisions.jsonl");
+}
+
+export interface FileLogOptions {
+  path: string;
+  /** When the file would grow past this, it is renamed to `<path>.1` and a new one started. */
+  maxBytes?: number;
+  /** Called once, on the first write failure. Later failures are dropped silently. */
+  onError?: (error: unknown) => void;
+}
+
+export interface FileLog extends DecisionLog {
+  /** Resolves once every entry written so far has reached the file (or failed). */
+  flush(): Promise<void>;
+}
+
+/**
+ * Append-only JSONL log. Writes are queued so lines never interleave, and the file is created
+ * with mode 0600 because it reveals which models and endpoints the user calls.
+ */
+export function createFileLog(options: FileLogOptions): FileLog {
+  const { path } = options;
+  const maxBytes = options.maxBytes ?? DEFAULT_LOG_MAX_BYTES;
+  let queue: Promise<void> = Promise.resolve();
+  let size: number | null = null;
+  let reported = false;
+
+  async function append(line: string): Promise<void> {
+    if (size === null) {
+      await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+      size = await stat(path).then(
+        (s) => s.size,
+        () => 0,
+      );
+    }
+    const bytes = Buffer.byteLength(line);
+    if (size > 0 && size + bytes > maxBytes) {
+      await rename(path, `${path}.1`);
+      size = 0;
+    }
+    await appendFile(path, line, { mode: 0o600 });
+    size += bytes;
+  }
+
+  return {
+    write(entry) {
+      const line = `${JSON.stringify(entry)}\n`;
+      queue = queue
+        .then(() => append(line))
+        .catch((error: unknown) => {
+          // Re-stat on the next write, in case the file was moved or the directory removed.
+          size = null;
+          if (!reported) {
+            reported = true;
+            options.onError?.(error);
+          }
+        });
+    },
+    flush: () => queue,
+  };
+}
+
+export const NO_LOG: DecisionLog = { write() {} };

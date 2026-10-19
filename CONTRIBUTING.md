@@ -28,7 +28,7 @@ Useful scripts:
 | `pnpm lint` / `pnpm format` | Biome check, or check and fix |
 | `pnpm typecheck` | `tsc` in every package |
 | `pnpm build` | tsup (JS) + `tsc` (declarations) in every package |
-| `pnpm test` | vitest across all packages |
+| `pnpm test` | vitest across all packages. Live tests run only when `OPENROUTER_API_KEY` is set |
 | `pnpm --filter switchkick dev` | rebuild the proxy on change and run `switchkick serve` |
 
 ## Layout
