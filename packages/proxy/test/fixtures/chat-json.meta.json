@@ -1,0 +1,18 @@
+{
+  "status": 200,
+  "headers": {
+    "content-type": "application/json",
+    "x-generation-id": "gen-REDACTED"
+  },
+  "request": {
+    "model": "anthropic/claude-haiku-4.5",
+    "stream": false,
+    "max_tokens": 16,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Reply with exactly: ok"
+      }
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateDecisionsResponse } from "../src/index.js";
+import live from "./fixtures/decisions-live.response.json" with { type: "json" };
 import request from "./fixtures/decisions-tutorial.request.json" with { type: "json" };
 import response from "./fixtures/decisions-tutorial.response.json" with { type: "json" };
 
@@ -9,6 +10,10 @@ describe("validateDecisionsResponse", () => {
   it("accepts the documented tutorial response", () => {
     const result = validateDecisionsResponse(response, questions);
     expect(result.ok).toBe(true);
+  });
+
+  it("accepts a live Jev 1.14 response", () => {
+    expect(validateDecisionsResponse(live, questions).ok).toBe(true);
   });
 
   it("reports a missing answer by question name", () => {

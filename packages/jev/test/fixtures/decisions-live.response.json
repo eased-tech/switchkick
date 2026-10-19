@@ -1,0 +1,41 @@
+{
+  "model": "typesafe/jev-1.14-20261014",
+  "answers": {
+    "is_bug": {
+      "type": "noul",
+      "noul": 0.95
+    },
+    "team": {
+      "type": "choice",
+      "choice": "payments",
+      "probabilities": {
+        "payments": 0.76,
+        "frontend": 0.24,
+        "account": 0
+      },
+      "confidence": 0.64
+    },
+    "urgency": {
+      "type": "score",
+      "score": 2,
+      "legend": {
+        "0": "Can wait for the next release",
+        "1": "Should be fixed this week",
+        "2": "Blocking revenue right now"
+      },
+      "probabilities": {
+        "0": 0,
+        "1": 0,
+        "2": 1
+      },
+      "confidence": 1
+    }
+  },
+  "usage": {
+    "input_tokens": 476,
+    "output_tokens": 70,
+    "cost": 0.000019992
+  },
+  "id": "gen-dec-REDACTED",
+  "provider": "TypeSafe"
+}
