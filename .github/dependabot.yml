@@ -6,6 +6,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # The types must match the oldest supported Node (engines: >=22.18), or code could compile
+      # against APIs that Node 22 doesn't have.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       development:
         dependency-type: development
