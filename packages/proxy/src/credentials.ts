@@ -99,15 +99,22 @@ function credentialStore(platform: NodeJS.Platform): Store | null {
 
 /** Reads `OPENROUTER_API_KEY` from KEY=value lines, allowing `export`, quotes and comments. */
 export function parseEnvFile(text: string): string | null {
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim().replace(/^export\s+/, "");
+  // Plain string operations rather than regexes with nested quantifiers, which backtrack
+  // polynomially on long runs of spaces.
+  for (const raw of text.split("\n")) {
+    let line = raw.trim();
+    if (line.startsWith("export ") || line.startsWith("export\t")) line = line.slice(7).trim();
     if (line === "" || line.startsWith("#")) continue;
-    const match = /^OPENROUTER_API_KEY\s*=\s*(.*)$/.exec(line);
-    if (!match) continue;
-    let value = (match[1] ?? "").trim();
-    const quoted = /^(["'])(.*)\1$/.exec(value);
-    if (quoted) value = quoted[2] ?? "";
-    else value = value.replace(/\s+#.*$/, "");
+    const eq = line.indexOf("=");
+    if (eq === -1 || line.slice(0, eq).trim() !== "OPENROUTER_API_KEY") continue;
+    let value = line.slice(eq + 1).trim();
+    const quote = value[0];
+    if ((quote === '"' || quote === "'") && value.length >= 2 && value.endsWith(quote)) {
+      value = value.slice(1, -1);
+    } else {
+      const comment = value.search(/\s#/);
+      if (comment !== -1) value = value.slice(0, comment).trimEnd();
+    }
     return value || null;
   }
   return null;
