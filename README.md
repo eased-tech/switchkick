@@ -2,9 +2,8 @@
 
 > **Status: pre-alpha.** All three routing modes work: static (one configured tier), hosted
 > (OpenRouter's Jev router picks the model) and local (switchkick asks Jev and applies its own
-> policy). `setup`, `doctor`, `uninstall`, `report`, `eval` and `env` are in place; packages on npm
-> and binaries come with the first release. The acceptance thresholds in local mode are untuned
-> starting values.
+> policy). `setup`, `doctor`, `uninstall`, `report`, `eval` and `env` are in place; standalone
+> binaries come later. The acceptance thresholds in local mode are untuned starting values.
 
 switchkick is a local proxy for coding agents and OpenAI/Anthropic SDK apps. It accepts
 OpenAI Chat Completions, OpenAI Responses and Anthropic Messages requests, sends them through
@@ -19,14 +18,17 @@ Routing modes:
 
 ## Getting started
 
-Until the first release is on npm, run switchkick from a checkout:
+switchkick needs Node.js 22.18 or newer.
 
 ```sh
-pnpm install && pnpm build
-alias switchkick="node $PWD/packages/proxy/dist/cli.js"
+npm install -g switchkick
 switchkick setup
 switchkick doctor --live
 ```
+
+`npx switchkick setup` works too: the service it installs then runs this exact version through
+npx. To run from a checkout instead, `pnpm install && pnpm build`, then use
+`node packages/proxy/dist/cli.js` in place of `switchkick`.
 
 `setup` asks for your OpenRouter key and shows what it will change before doing it:
 

@@ -1,6 +1,6 @@
 {
   "name": "switchkick",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Local proxy that routes OpenAI and Anthropic API traffic through OpenRouter, using Jev to pick the model for each turn.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/eased-tech/switchkick#readme",
@@ -22,7 +22,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.18"
@@ -30,7 +31,8 @@
   "scripts": {
     "build": "tsup && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "dev": "tsup --watch --onSuccess \"node dist/cli.js serve\""
+    "dev": "tsup --watch --onSuccess \"node dist/cli.js serve\"",
+    "prepack": "node ../../scripts/prepack.mjs --readme"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",
@@ -40,5 +42,8 @@
     "smol-toml": "^1.9.1",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

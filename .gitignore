@@ -13,3 +13,8 @@ scripts/spikes/out/
 # Internal planning and research notes. Kept locally, not published.
 PLAN.md
 docs/internal/
+
+# Copied from the repository root by scripts/prepack.mjs when packing.
+/packages/*/LICENSE
+/packages/*/NOTICE
+/packages/proxy/README.md

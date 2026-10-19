@@ -1,6 +1,6 @@
 {
   "name": "@switchkick/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Pure routing policy for switchkick: decision inputs in, model and effort out.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/eased-tech/switchkick#readme",
@@ -19,13 +19,18 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "build": "tsup && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/prepack.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
