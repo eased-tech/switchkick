@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { run } from "../src/index.js";
+import { CredentialError, run } from "../src/index.js";
 import { send, startUpstream, type Upstream } from "./helpers.js";
 
 let dir: string;
@@ -37,6 +37,11 @@ async function serve(yaml: string, argv: string[] = [], env: NodeJS.ProcessEnv =
   await writeFile(config, `upstream: { baseUrl: "${upstream.baseUrl}" }\n${yaml}`);
   const result = await run(["serve", "--config", config, "--port", "0", ...argv], {
     env: { OPENROUTER_API_KEY: "sk-test", XDG_STATE_HOME: dir, ...env },
+    // Stands in for the real lookup so a test can never reach the user's Keychain.
+    findApiKey: async (env) => {
+      if (env.OPENROUTER_API_KEY) return { key: env.OPENROUTER_API_KEY, source: "test" };
+      throw new CredentialError("No OpenRouter API key found.");
+    },
     stdout: () => {},
     stderr: (text) => {
       stderr += text;
@@ -103,9 +108,15 @@ describe("switchkick serve", () => {
     await expect.poll(() => readFile(file, "utf8").catch(() => "")).toContain('"status":200');
   });
 
-  it("exits when OPENROUTER_API_KEY is missing", async () => {
+  it("exits when no API key is found", async () => {
     const { exitCode } = await serve("", [], { OPENROUTER_API_KEY: "" });
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("OPENROUTER_API_KEY");
+    expect(stderr).toContain("No OpenRouter API key found.");
+  });
+
+  it("reports where the key came from, but never the key", async () => {
+    await serve("", [], { OPENROUTER_API_KEY: "sk-secret-value" });
+    expect(stderr).toContain("key:    from test");
+    expect(stderr).not.toContain("sk-secret-value");
   });
 });

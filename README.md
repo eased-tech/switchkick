@@ -21,6 +21,18 @@ pnpm install && pnpm build
 OPENROUTER_API_KEY=sk-or-... node packages/proxy/dist/cli.js serve --tier balanced
 ```
 
+Instead of setting `OPENROUTER_API_KEY` each time, you can store the key once in the OS
+credential store, which switchkick checks next:
+
+```sh
+security add-generic-password -s switchkick -a openrouter -w          # macOS Keychain
+secret-tool store --label=switchkick service switchkick account openrouter   # Linux
+```
+
+Where neither exists, put `OPENROUTER_API_KEY=...` in `~/.config/switchkick/env` and
+`chmod 600` it; switchkick refuses to read the file if other users can. At startup switchkick
+says which source it used, never the key.
+
 Then point a client at `http://127.0.0.1:8787`:
 
 | Client API | Endpoint | Typical setting |
@@ -29,7 +41,7 @@ Then point a client at `http://127.0.0.1:8787`:
 | OpenAI Responses | `POST /v1/responses` | `OPENAI_BASE_URL=http://127.0.0.1:8787/v1` |
 | Anthropic Messages | `POST /v1/messages` | `ANTHROPIC_BASE_URL=http://127.0.0.1:8787` |
 
-The client's API key is ignored; switchkick sends its own `OPENROUTER_API_KEY` upstream. In
+The client's API key is ignored; switchkick sends its own OpenRouter key upstream. In
 static mode the request's `model` is replaced with the tier's model:
 
 | Tier | Model |

@@ -13,6 +13,13 @@ import {
   loadConfig,
   resolveTiers,
 } from "./config.js";
+import {
+  CredentialError,
+  defaultCredentialDeps,
+  envFilePath,
+  type FoundKey,
+  findApiKey,
+} from "./credentials.js";
 import { createFileLog, type DecisionLog, defaultLogPath, NO_LOG } from "./log.js";
 
 const HELP = `switchkick ${VERSION}
@@ -31,8 +38,15 @@ Serve options (each overrides the config file):
   --no-log            Don't write a decision log
   --no-attribution    Don't identify requests as coming from switchkick (see below)
 
+API key, the first found wins:
+  1. The OPENROUTER_API_KEY environment variable.
+  2. The OS credential store, service "switchkick", account "openrouter":
+       macOS:  security add-generic-password -s switchkick -a openrouter -w
+       Linux:  secret-tool store --label=switchkick service switchkick account openrouter
+  3. ${envFilePath()}, a file with an OPENROUTER_API_KEY=... line. It must be
+     readable only by you (chmod 600).
+
 Environment:
-  OPENROUTER_API_KEY  Required. Used for every upstream call.
   SWITCHKICK_CONFIG   Config file, if --config isn't given.
   SWITCHKICK_TOKEN    Clients must send this as their API key. Required when the host is not a
                       loopback address.
@@ -46,6 +60,8 @@ is sent.
 
 export interface RunIo {
   env: NodeJS.ProcessEnv;
+  /** Finds the OpenRouter key. Defaults to the real environment, credential store and env file. */
+  findApiKey?: (env: NodeJS.ProcessEnv) => Promise<FoundKey>;
   stdout(text: string): void;
   stderr(text: string): void;
 }
@@ -171,8 +187,13 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   const settings = resolveSettings(values, io.env, loaded.config);
   if (typeof settings === "string") return fail(settings);
 
-  const apiKey = io.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return fail("OPENROUTER_API_KEY is not set.");
+  let found: FoundKey;
+  try {
+    found = await (io.findApiKey ?? ((env) => findApiKey(defaultCredentialDeps(env))))(io.env);
+  } catch (error) {
+    if (error instanceof CredentialError) return fail(error.message);
+    throw error;
+  }
 
   let log: DecisionLog = NO_LOG;
   if (settings.logFile !== null) {
@@ -187,7 +208,7 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
 
   const target = resolveTiers(loaded.config)[settings.tier];
   const app = createApp({
-    apiKey,
+    apiKey: found.key,
     route: { tier: settings.tier, ...target },
     upstreamBaseUrl: loaded.config.upstream.baseUrl.replace(/\/+$/, ""),
     maxBodyBytes: loaded.config.server.maxBodyBytes,
@@ -207,6 +228,7 @@ export async function run(argv: string[], io: RunIo): Promise<RunResult> {
   io.stderr(
     `switchkick listening on http://${host}:${address.port}\n` +
       `  config: ${loaded.path ?? "built-in defaults"}\n` +
+      `  key:    from ${found.source}\n` +
       `  route:  static, ${settings.tier} → ${target.model}` +
       `${target.effort ? `, effort ${target.effort}` : ""}\n`,
   );

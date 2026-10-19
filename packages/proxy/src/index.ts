@@ -20,6 +20,17 @@ export {
   parseConfig,
   resolveTiers,
 } from "./config.js";
+export {
+  type CredentialDeps,
+  CredentialError,
+  defaultCredentialDeps,
+  envFilePath,
+  type FoundKey,
+  findApiKey,
+  KEY_ACCOUNT,
+  KEY_SERVICE,
+  parseEnvFile,
+} from "./credentials.js";
 export { type ApiFormat, errorBody, FORMATS, ROUTE_PATHS } from "./formats.js";
 export { ATTRIBUTION, type StaticRoute } from "./forward.js";
 export {
