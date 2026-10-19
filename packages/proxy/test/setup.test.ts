@@ -314,6 +314,19 @@ describe("switchkick uninstall", () => {
     await expect(stat(join(machine.home, ".local", "state", "switchkick"))).rejects.toThrow();
   });
 
+  it("refuses to run setup again over an unreadable setup record", async () => {
+    await mac();
+    await mkdir(join(machine.home, ".codex"));
+    await writeFile(codexPath(), 'model = "gpt-6"\n');
+    const setup = ["setup", "--yes", "--client", "codex"];
+    expect(await machine.run(setup, { OPENROUTER_API_KEY: KEY })).toBe(0);
+    const wired = await read(codexPath());
+    await writeFile(join(machine.home, ".local", "state", "switchkick", "setup.json"), "{broken");
+    expect(await machine.run(setup, { OPENROUTER_API_KEY: KEY })).toBe(1);
+    expect(machine.stderr).toContain("can't read the setup record");
+    expect(await read(codexPath())).toBe(wired);
+  });
+
   it("says so when setup never ran", async () => {
     await mac();
     expect(await machine.run(["uninstall"])).toBe(0);

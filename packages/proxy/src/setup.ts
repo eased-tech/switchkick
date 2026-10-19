@@ -32,6 +32,7 @@ import { stateDir } from "./log.js";
 import {
   emptyManifest,
   type Manifest,
+  manifestPath,
   readBytes,
   readManifest,
   recordWrite,
@@ -224,6 +225,17 @@ export async function setupCommand(argv: string[], io: CommandIo): Promise<numbe
     }
   }
 
+  let manifest: Manifest;
+  try {
+    manifest = (await readManifest(env)) ?? emptyManifest();
+  } catch (error) {
+    // Starting a new record would save files setup already changed as their originals.
+    throw new CommandError(
+      `can't read the setup record ${manifestPath(env)}: ${(error as Error).message}. It holds ` +
+        "the original client settings; move it aside only if you no longer need them.",
+    );
+  }
+
   const clients = requested.length > 0 ? [...new Set(requested)] : await detectClients(system);
   if (clients.length === 0) clients.push("openai");
   const preset: Preset =
@@ -339,7 +351,6 @@ export async function setupCommand(argv: string[], io: CommandIo): Promise<numbe
     return 1;
   }
 
-  const manifest: Manifest = (await readManifest(env).catch(() => null)) ?? emptyManifest();
   const save = () => writeManifest(env, manifest);
   let failed = false;
 

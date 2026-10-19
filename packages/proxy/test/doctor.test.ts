@@ -32,7 +32,7 @@ afterEach(async () => {
   await machine?.cleanup();
 });
 
-async function mac() {
+async function mac(clients = "claude") {
   let keychain: string | null = null;
   let loaded = false;
   up = false;
@@ -57,7 +57,7 @@ async function mac() {
       if (url.endsWith("/healthz")) return up ? json({ ok: true, version: VERSION }) : undefined;
       if (url.endsWith("/api/v1/models")) return json({ data: catalog.map((id) => ({ id })) });
       if (url.endsWith("/decisions")) return json(JEV);
-      if (url.includes("/v1/messages") || url.includes("/v1/chat/completions")) {
+      if (/\/v1\/(messages|chat\/completions|responses)$/.test(new URL(url).pathname)) {
         return modelStatus === 200
           ? json({ model: "anthropic/claude-opus-5.5" })
           : json({ error: { message: "Insufficient credits" } }, modelStatus);
@@ -70,7 +70,7 @@ async function mac() {
   machine.system.scriptPath = join(import.meta.dirname, "doctor.test.ts");
   await mkdir(join(machine.home, ".claude"));
   expect(
-    await machine.run(["setup", "--yes", "--client", "claude"], { OPENROUTER_API_KEY: KEY }),
+    await machine.run(["setup", "--yes", "--client", clients], { OPENROUTER_API_KEY: KEY }),
   ).toBe(0);
   machine.stdout = "";
   machine.stderr = "";
@@ -107,9 +107,20 @@ describe("switchkick doctor", () => {
     modelStatus = 402;
     expect(await machine.run(["doctor", "--live"], { OPENROUTER_API_KEY: KEY })).toBe(1);
     expect(machine.stdout).toContain(
-      "✗ Model call: OpenRouter refused it (402): Insufficient credits",
+      "✗ Model call (Claude Code): OpenRouter refused it (402): Insufficient credits",
     );
     expect(machine.stdout).toContain("lower CLAUDE_CODE_MAX_OUTPUT_TOKENS");
+  });
+
+  it("probes Codex the way Codex sends requests, with no output cap", async () => {
+    await mac("codex");
+    modelStatus = 402;
+    expect(await machine.run(["doctor", "--live"], { OPENROUTER_API_KEY: KEY })).toBe(1);
+    const call = machine.fetches.find((f) => f.url.endsWith("/v1/responses"));
+    const body = JSON.parse(String(call?.init?.body));
+    expect(body.max_output_tokens).toBeUndefined();
+    expect(machine.stdout).toContain("✗ Model call (Codex): OpenRouter refused it (402)");
+    expect(machine.stdout).toContain("Codex doesn't cap its output");
   });
 
   it("fails when a configured model isn't on OpenRouter, or the proxy is down", async () => {

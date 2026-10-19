@@ -60,10 +60,12 @@ The config, the decision log and the stored key stay; `uninstall --purge` delete
 
 `switchkick doctor` checks the config, the key (it says where it found it, never what it is),
 that every configured model is on OpenRouter, the service, the client settings, and that the
-proxy answers. `--live` also asks Jev one question and sends one tiny request through the proxy at
-the frontier tier, with the same `max_tokens` Claude Code will ask for. That's where a 402 from
-OpenRouter (credit, or the key's limit, too low for a request's worst case) shows up, rather than
-in the middle of a session. Both cost a fraction of a cent.
+proxy answers. `--live` also asks Jev one question and sends a tiny request through the proxy at
+the frontier tier for each client setup wired, with the output cap that client asks for. That's
+where a 402 from OpenRouter (credit, or the key's limit, too low for a request's worst case) shows
+up, rather than in the middle of a session. Claude Code asks for up to `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
+Codex sets no cap, so OpenRouter prices each Codex request at the model's full output limit,
+and a key with little credit left refuses them all. The checks cost a fraction of a cent.
 
 ## Commands
 

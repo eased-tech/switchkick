@@ -36,10 +36,11 @@ Checks that switchkick is ready: the config file, the OpenRouter key (never show
 configured models exist on OpenRouter, the background service, the client settings setup
 changed, and that the proxy answers. Exits 1 if anything fails.
 
-  --live   Also make one Jev call (local mode) and one tiny model call through the proxy, at
-           the frontier tier. Costs a fraction of a cent. For Claude Code, the call asks for the
-           same max_tokens Claude Code will, so a 402 from OpenRouter (credit too low for the
-           request's worst case) shows up here rather than mid-session.
+  --live   Also make one Jev call (local mode) and a tiny model call through the proxy at the
+           frontier tier, one per client setup wired. Costs a fraction of a cent. Each call asks
+           for the output cap its client does (Claude Code's max_tokens; none for Codex), so a 402
+           from OpenRouter (credit too low for the request's worst case) shows up here rather
+           than mid-session.
 `;
 
 type Level = "ok" | "warn" | "fail" | "info";
@@ -231,6 +232,7 @@ export async function doctorCommand(argv: string[], io: CommandIo): Promise<numb
   // Clients.
   const wiredClients = new Set<Client>(manifest?.clients ?? []);
   let claudeMaxTokens: number | null = null;
+  let codexWired = false;
   for (const client of ["codex", "claude"] as const) {
     const path = client === "codex" ? codexConfigPath(system) : claudeSettingsPath(system);
     const text = (await readBytes(path))?.toString("utf8") ?? null;
@@ -243,6 +245,7 @@ export async function doctorCommand(argv: string[], io: CommandIo): Promise<numb
     } else {
       report("info", `${name}: not pointed at switchkick`);
     }
+    if (client === "codex" && state.wired) codexWired = true;
     if (client === "claude" && state.wired) {
       const configured =
         claudeEnv(text)?.CLAUDE_CODE_MAX_OUTPUT_TOKENS ?? env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
@@ -259,11 +262,31 @@ export async function doctorCommand(argv: string[], io: CommandIo): Promise<numb
   }
 
   if (values.live) {
-    failures += await live(io, loaded, endpoint, key, health !== null, claudeMaxTokens, report);
+    failures += await live(
+      io,
+      loaded,
+      endpoint,
+      key,
+      health !== null,
+      claudeMaxTokens,
+      codexWired,
+      report,
+    );
   }
 
   io.stdout(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} check(s) failed.\n`);
   return failures === 0 ? 0 : 1;
+}
+
+interface Probe {
+  /** The client the request imitates, or null for a generic one. */
+  name: string | null;
+  path: string;
+  body: Record<string, unknown>;
+  /** The output cap, for messages. */
+  what: string;
+  /** How to fix a 402. */
+  hint: string;
 }
 
 /** The `--live` checks. Returns how many failed (already reported). */
@@ -274,6 +297,7 @@ async function live(
   key: FoundKey | null,
   proxyUp: boolean,
   claudeMaxTokens: number | null,
+  codex: boolean,
   report: (level: Level, text: string) => void,
 ): Promise<number> {
   const { config } = loaded;
@@ -326,63 +350,87 @@ async function live(
     fail("Model call: skipped, the proxy isn't answering");
     return failures;
   }
-  const claude = claudeMaxTokens !== null;
-  const headers = {
-    "content-type": "application/json",
-    authorization: `Bearer ${endpoint.token ?? PLACEHOLDER_KEY}`,
-    "x-switchkick-tier": "frontier",
-    "x-switchkick-session": "switchkick-doctor",
-    ...(claude ? { "anthropic-version": "2023-06-01" } : {}),
-  };
+
+  // One request per wired client, shaped the way that client sends them, since what OpenRouter
+  // refuses (402) depends on the output cap each one asks for.
   const messages = [{ role: "user", content: LIVE_PROMPT }];
-  const body = claude
-    ? { model: "claude-doctor", max_tokens: claudeMaxTokens, messages }
-    : { model: "doctor", max_tokens: 16, messages };
-  const started = Date.now();
-  let response: Response;
-  try {
-    response = await io.system.fetch(
-      `${endpoint.url}/v1/${claude ? "messages" : "chat/completions"}`,
-      {
+  const probes: Probe[] = [];
+  if (claudeMaxTokens !== null) {
+    probes.push({
+      name: "Claude Code",
+      path: "messages",
+      body: { model: "claude-doctor", max_tokens: claudeMaxTokens, messages },
+      what: `Claude Code's max_tokens (${claudeMaxTokens})`,
+      hint: "lower CLAUDE_CODE_MAX_OUTPUT_TOKENS in Claude Code's settings.",
+    });
+  }
+  if (codex) {
+    probes.push({
+      name: "Codex",
+      path: "responses",
+      body: { model: "codex-doctor", input: messages, store: false },
+      what: "no output cap, as Codex sends",
+      hint:
+        "use a key with more headroom: Codex doesn't cap its output, so OpenRouter prices each " +
+        "request at the model's full output limit.",
+    });
+  }
+  if (probes.length === 0) {
+    probes.push({
+      name: null,
+      path: "chat/completions",
+      body: { model: "doctor", max_tokens: 16, messages },
+      what: "max_tokens 16",
+      hint: "lower max_tokens.",
+    });
+  }
+  for (const probe of probes) {
+    const label = `Model call${probe.name ? ` (${probe.name})` : ""}`;
+    const started = Date.now();
+    let response: Response;
+    try {
+      response = await io.system.fetch(`${endpoint.url}/v1/${probe.path}`, {
         method: "POST",
-        headers,
-        body: JSON.stringify(body),
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${endpoint.token ?? PLACEHOLDER_KEY}`,
+          "x-switchkick-tier": "frontier",
+          "x-switchkick-session": "switchkick-doctor",
+          ...(probe.path === "messages" ? { "anthropic-version": "2023-06-01" } : {}),
+        },
+        body: JSON.stringify(probe.body),
         signal: AbortSignal.timeout(60_000),
-      },
-    );
-  } catch (error) {
-    fail(`Model call: ${(error as Error).message}`);
-    return failures;
-  }
-  const text = await response.text();
-  let parsed: Record<string, unknown> = {};
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    // Reported below by status.
-  }
-  const served = typeof parsed.model === "string" ? parsed.model : "a model";
-  const what = claude ? `Claude Code's max_tokens (${claudeMaxTokens})` : "max_tokens 16";
-  if (response.ok) {
-    report(
-      "ok",
-      `Model call: ${served} answered in ${Date.now() - started} ms, at the frontier tier with ${what}`,
-    );
-  } else {
+      });
+    } catch (error) {
+      fail(`${label}: ${(error as Error).message}`);
+      continue;
+    }
+    let parsed: Record<string, unknown> = {};
+    try {
+      parsed = JSON.parse(await response.text());
+    } catch {
+      // Reported below by status.
+    }
+    const served = typeof parsed.model === "string" ? parsed.model : "a model";
+    if (response.ok) {
+      report(
+        "ok",
+        `${label}: ${served} answered in ${Date.now() - started} ms, at the frontier tier with ` +
+          probe.what,
+      );
+      continue;
+    }
     const message =
       ((parsed.error as Record<string, unknown> | undefined)?.message as string | undefined) ??
       `HTTP ${response.status}`;
     if (response.status === 402) {
       fail(
-        `Model call: OpenRouter refused it (402): ${message}\n    The account's credit, or the ` +
-          `key's limit, doesn't cover the request's worst case at the frontier tier with ${what}. ` +
-          "Add credit or raise the key's limit, or " +
-          (claude
-            ? "lower CLAUDE_CODE_MAX_OUTPUT_TOKENS in Claude Code's settings."
-            : "lower max_tokens."),
+        `${label}: OpenRouter refused it (402): ${message}\n    The account's credit, or the ` +
+          `key's limit, doesn't cover the request's worst case at the frontier tier with ` +
+          `${probe.what}. Add credit or raise the key's limit, or ${probe.hint}`,
       );
     } else {
-      fail(`Model call: HTTP ${response.status}: ${message}`);
+      fail(`${label}: HTTP ${response.status}: ${message}`);
     }
   }
   return failures;
