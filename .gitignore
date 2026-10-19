@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+.context/
+# Raw spike output; scrubbed fixtures are committed under packages/*/test/fixtures
+scripts/spikes/out/
+
+# Internal planning and research notes. Kept locally, not published.
+PLAN.md
+docs/internal/

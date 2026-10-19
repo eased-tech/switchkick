@@ -1,0 +1,24 @@
+{
+  "name": "@switchkick/jev",
+  "version": "0.0.0",
+  "description": "Thin Jev Decisions API client for switchkick, with timeouts and fail-open behavior.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "switchkick-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

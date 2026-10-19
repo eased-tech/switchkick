@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "customConditions": ["switchkick-source"]
+  },
+  "include": ["src", "test", "*.config.ts"]
+}
