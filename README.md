@@ -38,6 +38,24 @@ static mode the request's `model` is replaced with the tier's model:
 | `balanced` | `anthropic/claude-sonnet-5.5` |
 | `frontier` | `anthropic/claude-opus-5.5` |
 
+To change the models or other settings, write a config file at `~/.config/switchkick/config.yaml`
+(or pass `--config`, or set `SWITCHKICK_CONFIG`). Every key is optional:
+
+```yaml
+# yaml-language-server: $schema=https://eased-tech.github.io/switchkick/schema/v1.json
+mode: static
+defaultTier: balanced
+tiers:
+  frontier: { model: anthropic/claude-opus-5.5 }
+attribution: true
+server: { host: 127.0.0.1, port: 8787, maxBodyBytes: 20mb }
+log: { enabled: true, file: ~/.local/state/switchkick/decisions.jsonl, maxBytes: 50mb }
+```
+
+A tier set in the file replaces the built-in one. Command-line flags override the file. The
+schema is in [`schema/v1.json`](schema/v1.json); unknown keys are rejected so typos don't go
+unnoticed.
+
 Responses come back unchanged, streaming included. Two things differ from OpenAI's Responses
 API, because OpenRouter's is stateless: `previous_response_id` is rejected with a 400, and
 `store: true` is sent as `false`.

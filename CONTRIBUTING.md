@@ -48,4 +48,5 @@ resolution requires.
 
 - Keep each pull request to one change, with tests.
 - `pnpm check` must pass.
-- A change to the config schema is a public API change. Call it out in the description.
+- A change to the config schema is a public API change. Regenerate `schema/v1.json` with
+  `pnpm schema` and call the change out in the description.

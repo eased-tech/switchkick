@@ -15,6 +15,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "schema": "UPDATE_SCHEMA=1 vitest run packages/proxy/test/schema.test.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "spike:fixtures": "node scripts/spikes/record-fixtures.ts",
     "spike:jev-latency": "node scripts/spikes/jev-latency.ts"
