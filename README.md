@@ -114,8 +114,8 @@ docker run -d --name switchkick -p 127.0.0.1:8787:8787 \
 | `SWITCHKICK_ATTRIBUTION` | | `off` to opt out. |
 
 Sessions and the decision log are written to `/data`; mount a volume there to keep them.
-Images are tagged with the version (`0.2.0`) and the minor version (`0.2`), and each has a
-build attestation: `gh attestation verify oci://ghcr.io/eased-tech/switchkick:<tag> --repo
+Images are tagged `latest`, with the version (`X.Y.Z`) and with the minor version (`X.Y`), and
+each has a build attestation: `gh attestation verify oci://ghcr.io/eased-tech/switchkick:<tag> --repo
 eased-tech/switchkick`.
 
 ## Commands

@@ -198,7 +198,7 @@ jobs:
           case "$version" in *-*) dist_tag=next ;; esac
           for name in @switchkick/core @switchkick/jev switchkick; do
             file="npm/$(echo "$name" | sed 's/^@//; s/\//-/')-$version.tgz"
-            if npm view "$name@$version" version >/dev/null 2>&1; then
+            if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
               echo "$name@$version is already published"
             else
               npm publish "$file" --provenance --access public --tag "$dist_tag"
