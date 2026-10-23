@@ -1,0 +1,36 @@
+---
+title: switchkick
+description: A local proxy that routes OpenAI and Anthropic API traffic through OpenRouter, using Jev to pick the model for each turn.
+template: splash
+hero:
+  tagline: A local proxy for coding agents and OpenAI or Anthropic SDK apps. It sends every request through OpenRouter and uses Jev to choose the model for each turn, so easy turns go to a cheap model and hard ones to a strong one.
+  actions:
+    - text: Get started
+      link: /switchkick/getting-started/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/eased-tech/switchkick
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+<CardGrid>
+  <Card title="Clients work unchanged" icon="laptop">
+    Codex, Claude Code and apps built on the OpenAI or Anthropic SDKs only change a base URL.
+    switchkick accepts Chat Completions, Responses and Messages requests and streams the responses
+    back byte for byte.
+  </Card>
+  <Card title="One key" icon="seti:lock">
+    One `OPENROUTER_API_KEY` covers both the routing decision and the model call.
+  </Card>
+  <Card title="Three routing modes" icon="random">
+    **static** sends everything to one tier. **hosted** lets OpenRouter's Jev router pick.
+    **local** asks Jev and applies switchkick's own thresholds and guards.
+  </Card>
+  <Card title="No prompt text in logs" icon="document">
+    The decision log records the tier, model, cost and Jev's answer, never what you or the model
+    wrote. `switchkick report` sums it up.
+  </Card>
+</CardGrid>

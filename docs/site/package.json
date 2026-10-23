@@ -1,0 +1,17 @@
+{
+  "name": "@switchkick/docs",
+  "private": true,
+  "description": "The switchkick documentation site, published to GitHub Pages.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "astro dev",
+    "docs:build": "astro build",
+    "docs:check": "node scripts/check-links.mjs",
+    "docs:preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.6",
+    "astro": "^7.4.2"
+  }
+}
