@@ -1,0 +1,13 @@
+# Only what the image build needs. Local-only files are often symlinks outside the build context.
+**/node_modules
+**/dist
+/dist-bin
+/coverage
+/.git
+/.context
+/docs/internal
+/PLAN.md
+/CLAUDE.local.md
+*.log
+.env
+.env.*

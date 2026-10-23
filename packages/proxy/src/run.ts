@@ -83,8 +83,11 @@ API key, the first found wins:
      readable only by you (chmod 600).
   \`switchkick setup\` stores the key for you.
 
-Environment:
+Environment (below the matching flag, above the config file):
   SWITCHKICK_CONFIG   Config file, if --config isn't given.
+  SWITCHKICK_HOST     Same as --host.
+  SWITCHKICK_PORT     Same as --port.
+  SWITCHKICK_MODE     Same as --mode.
   SWITCHKICK_TOKEN    Clients must send this as their API key. Required when the host is not a
                       loopback address.
   SWITCHKICK_TIER     Route every request at this tier: the static tier, the tier in local
@@ -164,16 +167,20 @@ export function resolveSettings(
   env: NodeJS.ProcessEnv,
   config: Config,
 ): ServeSettings | string {
-  const host = flags.host ?? config.server.host;
+  const fromEnv = (name: string) => env[name]?.trim() || undefined;
+  const host = flags.host ?? fromEnv("SWITCHKICK_HOST") ?? config.server.host;
   let port = config.server.port;
-  if (flags.port !== undefined) {
-    port = Number(flags.port);
-    if (!/^\d+$/.test(flags.port) || port > 65535) {
-      return `--port must be an integer from 0 to 65535, got "${flags.port}".`;
+  const portSource = flags.port !== undefined ? "--port" : "SWITCHKICK_PORT";
+  const portText = flags.port ?? fromEnv("SWITCHKICK_PORT");
+  if (portText !== undefined) {
+    port = Number(portText);
+    if (!/^\d+$/.test(portText) || port > 65535) {
+      return `${portSource} must be an integer from 0 to 65535, got "${portText}".`;
     }
   }
-  const mode = flags.mode ?? config.mode;
-  if (!isMode(mode)) return `--mode must be one of ${MODES.join(", ")}, got "${mode}".`;
+  const modeSource = flags.mode !== undefined ? "--mode" : "SWITCHKICK_MODE";
+  const mode = flags.mode ?? fromEnv("SWITCHKICK_MODE")?.toLowerCase() ?? config.mode;
+  if (!isMode(mode)) return `${modeSource} must be one of ${MODES.join(", ")}, got "${mode}".`;
   const envTier = env.SWITCHKICK_TIER?.trim().toLowerCase() || null;
   if (envTier !== null && !isTier(envTier)) {
     return `SWITCHKICK_TIER must be one of ${TIERS.join(", ")}, got "${env.SWITCHKICK_TIER}".`;
