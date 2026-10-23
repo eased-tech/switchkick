@@ -29,3 +29,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # The image follows Node's LTS line (even majors). The tag already floats to the latest
+      # 24.x on every build, so the next LTS major is moved to by hand.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
