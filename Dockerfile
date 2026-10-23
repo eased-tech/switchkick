@@ -9,7 +9,7 @@
 
 # The build is plain JavaScript, so it runs once on the build machine's platform and every
 # target platform copies the result. The final stage has no RUN step, so it needs no emulation.
-FROM --platform=$BUILDPLATFORM node:24-alpine AS build
+FROM --platform=$BUILDPLATFORM node:25-alpine AS build
 WORKDIR /src
 RUN npm install --global pnpm@12.14.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
@@ -26,7 +26,7 @@ RUN pnpm build \
   && echo '{"private":true}' > package.json \
   && npm install --omit=dev --no-audit --no-fund /pack/*.tgz
 
-FROM node:24-alpine
+FROM node:25-alpine
 LABEL org.opencontainers.image.source="https://github.com/eased-tech/switchkick" \
       org.opencontainers.image.description="Routes OpenAI and Anthropic API traffic through OpenRouter, using Jev to pick the model for each turn." \
       org.opencontainers.image.licenses="Apache-2.0"
