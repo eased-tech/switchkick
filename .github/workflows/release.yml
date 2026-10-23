@@ -93,6 +93,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -112,7 +115,6 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: node scripts/release/build-binaries.mjs "$TARGET"
       - name: Smoke test
-        shell: bash
         env:
           BINARY: dist-bin/switchkick-${{ matrix.target }}${{ matrix.ext }}
         run: |

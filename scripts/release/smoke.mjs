@@ -10,7 +10,7 @@
 // `-e NAME`), and its state directories point into the temporary `{dir}`.
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -71,12 +71,16 @@ const upstream = createServer((req, res) => {
 });
 
 const dir = await mkdtemp(join(tmpdir(), "switchkick-smoke-"));
+// Readable by everyone, so a container running as another user can read the config. It holds
+// no secrets.
+await chmod(dir, 0o755);
 const upstreamPort = await listen(upstream);
 const port = await freePort();
 const config = join(dir, "config.yaml");
 await writeFile(
   config,
   `upstream: { baseUrl: "http://127.0.0.1:${upstreamPort}/api/v1" }\nlog: { enabled: false }\n`,
+  { mode: 0o644 },
 );
 
 const fill = (arg) =>
