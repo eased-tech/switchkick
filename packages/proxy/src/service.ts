@@ -43,13 +43,17 @@ async function exists(path: string): Promise<boolean> {
   );
 }
 
+/** The script path inside a `bun build --compile` binary, which only exists in that binary. */
+const COMPILED_SCRIPT = /^(?:\/\$bunfs\/|[A-Za-z]:[\\/]~BUN[\\/])/;
+
 /**
  * The command the service runs. Normally the Node binary and this script, by absolute path. A
  * script in npx's cache can be cleaned away, so then the service runs this exact version through
- * npx instead, which fetches it again if needed.
+ * npx instead, which fetches it again if needed. A standalone binary runs itself.
  */
 export async function serviceCommand(system: System, config?: string): Promise<ServiceCommand> {
   const tail = ["serve", ...(config ? ["--config", config] : [])];
+  if (COMPILED_SCRIPT.test(system.scriptPath)) return { argv: [system.execPath, ...tail] };
   if (/[\\/]_npx[\\/]/.test(system.scriptPath)) {
     const npx = join(dirname(system.execPath), system.platform === "win32" ? "npx.cmd" : "npx");
     if (await exists(npx)) {

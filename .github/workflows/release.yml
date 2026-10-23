@@ -1,0 +1,350 @@
+name: Release
+
+# A `v*` tag (only admins can push one) builds and smoke-tests every artifact, then publishes:
+# npm packages with provenance, a GitHub Release with standalone binaries, checksums and
+# attestations, a multi-arch image on GHCR, and the Homebrew formula. Pushes to main and pull
+# requests that touch packaging run the same builds and smoke tests without publishing.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .dockerignore
+      - .github/workflows/release.yml
+      - Dockerfile
+      - package.json
+      - packages/*/package.json
+      - pnpm-lock.yaml
+      - scripts/release/**
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  BUN_VERSION: 1.4.4
+  IMAGE: ghcr.io/eased-tech/switchkick
+
+jobs:
+  check:
+    name: Check and pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Tag matches the package versions
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node scripts/release/check-tag.mjs "$TAG" release-notes.md
+      - name: Lint, typecheck and test
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: pnpm lint && pnpm typecheck && pnpm build && pnpm test
+      - name: Build
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: pnpm build
+      - name: Pack the npm packages
+        run: pnpm --recursive pack --pack-destination npm
+      - name: Smoke-test the packed npm package
+        run: |
+          mkdir install && cd install
+          echo '{"private":true}' > package.json
+          npm install --omit=dev --no-audit --no-fund ../npm/*.tgz
+          cd ..
+          node scripts/release/smoke.mjs node install/node_modules/switchkick/dist/cli.js serve --config {config} --port {port}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm
+          path: npm/*.tgz
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+
+  binaries:
+    name: Binary ${{ matrix.target }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each binary is built and smoke-tested on its own platform, so macOS binaries are
+          # signed by Bun on macOS and every one is run at least once before it ships.
+          - { target: linux-x64, os: ubuntu-latest }
+          - { target: linux-arm64, os: ubuntu-24.04-arm }
+          - { target: darwin-x64, os: macos-15-intel }
+          - { target: darwin-arm64, os: macos-latest }
+          - { target: windows-x64, os: windows-latest, ext: .exe }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Compile
+        env:
+          TARGET: ${{ matrix.target }}
+        run: node scripts/release/build-binaries.mjs "$TARGET"
+      - name: Smoke test
+        env:
+          BINARY: dist-bin/switchkick-${{ matrix.target }}${{ matrix.ext }}
+        run: |
+          "./$BINARY" --version
+          node scripts/release/smoke.mjs "$BINARY" serve --config {config} --port {port}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: binary-${{ matrix.target }}
+          path: dist-bin/switchkick-${{ matrix.target }}${{ matrix.ext }}
+          if-no-files-found: error
+
+  image:
+    name: Docker image
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build both platforms
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Load the amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: switchkick:smoke
+          cache-from: type=gha
+      - name: Smoke test
+        run: |
+          node scripts/release/smoke.mjs docker run --rm --network host \
+            -e OPENROUTER_API_KEY -e SWITCHKICK_TOKEN -e SWITCHKICK_PORT={port} \
+            -e SWITCHKICK_CONFIG={config} -v {dir}:{dir}:ro switchkick:smoke
+      - name: Runs as a non-root user with a healthcheck
+        run: |
+          test "$(docker image inspect switchkick:smoke --format '{{.Config.User}}')" = node
+          docker image inspect switchkick:smoke --format '{{json .Config.Healthcheck}}' | grep -q healthz
+          docker run -d --name hc -e OPENROUTER_API_KEY=sk-or-v1-smoke -e SWITCHKICK_TOKEN=t switchkick:smoke
+          for i in $(seq 30); do
+            status=$(docker inspect hc --format '{{.State.Health.Status}}')
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          docker logs hc
+          test "$status" = healthy
+
+  npm:
+    name: Publish to npm
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [check, binaries, image]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing, and provenance
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: npm with trusted publishing
+        run: npm install --global npm@^11.5.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm
+          path: npm
+      - name: Publish core, jev, then switchkick
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          dist_tag=latest
+          case "$version" in *-*) dist_tag=next ;; esac
+          for name in @switchkick/core @switchkick/jev switchkick; do
+            file="npm/$(echo "$name" | sed 's/^@//; s/\//-/')-$version.tgz"
+            if [ "$(npm view "$name@$version" version 2>/dev/null)" = "$version" ]; then
+              echo "$name@$version is already published"
+            else
+              npm publish "$file" --provenance --access public --tag "$dist_tag"
+            fi
+          done
+
+  github-release:
+    name: GitHub Release
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+      id-token: write # sign attestations
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: binary-*
+          path: dist-bin
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+      - name: Checksums
+        working-directory: dist-bin
+        run: sha256sum switchkick-* > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist-bin/switchkick-*
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist-bin/* --repo "$REPO" --clobber
+          else
+            gh release create "$TAG" dist-bin/* --repo "$REPO" --verify-tag \
+              --title "$TAG" --notes-file release-notes.md "${prerelease[@]}"
+          fi
+      - name: Verify an attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: gh attestation verify dist-bin/switchkick-linux-x64 --repo "$REPO"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checksums
+          path: dist-bin/SHA256SUMS
+
+  ghcr:
+    name: Publish to GHCR
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # sign the attestation
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: The published image answers /healthz
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          docker run -d --name published -p 127.0.0.1:8787:8787 \
+            -e OPENROUTER_API_KEY=sk-or-v1-smoke -e SWITCHKICK_TOKEN=t "$IMAGE:${TAG#v}"
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:8787/healthz && exit 0; sleep 1; done
+          docker logs published
+          exit 1
+
+  homebrew:
+    name: Update the Homebrew tap
+    needs: github-release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Skip without a tap token
+        if: env.TAP_TOKEN == ''
+        run: echo "::warning::HOMEBREW_TAP_TOKEN isn't set, so the tap wasn't updated."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.TAP_TOKEN != ''
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: env.TAP_TOKEN != ''
+        with:
+          name: checksums
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.TAP_TOKEN != ''
+        with:
+          repository: eased-tech/homebrew-switchkick
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Commit the formula
+        if: env.TAP_TOKEN != ''
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p tap/Formula
+          node scripts/release/homebrew-formula.mjs "${TAG#v}" SHA256SUMS > tap/Formula/switchkick.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/switchkick.rb
+          git diff --cached --quiet || git commit -m "switchkick ${TAG#v}"
+          git push
+      - name: brew install answers /healthz
+        if: env.TAP_TOKEN != ''
+        run: |
+          brew install eased-tech/switchkick/switchkick
+          switchkick --version
+          node scripts/release/smoke.mjs switchkick serve --config {config} --port {port}

@@ -174,6 +174,19 @@ describe("switchkick setup", () => {
     expect(plist).toContain(`<string>switchkick@${VERSION}</string>`);
   });
 
+  it("runs a standalone binary directly", async () => {
+    await mac({ scriptPath: "/$bunfs/root/switchkick" });
+    machine.system.execPath = "/opt/homebrew/bin/switchkick";
+    expect(
+      await machine.run(["setup", "--yes", "--client", "openai"], { OPENROUTER_API_KEY: KEY }),
+    ).toBe(0);
+    const plist = await read(plistPath());
+    expect(plist).toContain(
+      "<string>/opt/homebrew/bin/switchkick</string>\n    <string>serve</string>",
+    );
+    expect(plist).not.toContain("$bunfs");
+  });
+
   it("reports a service that doesn't come up", async () => {
     await mac();
     machine.system.fetch = async () => {

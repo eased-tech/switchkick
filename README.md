@@ -30,6 +30,27 @@ switchkick doctor --live
 npx. To run from a checkout instead, `pnpm install && pnpm build`, then use
 `node packages/proxy/dist/cli.js` in place of `switchkick`.
 
+### Other ways to install
+
+These don't need Node.js.
+
+- **Homebrew** (macOS and Linux): `brew install eased-tech/switchkick/switchkick`.
+- **Standalone binary:** download `switchkick-<os>-<arch>` for linux-x64, linux-arm64,
+  darwin-x64, darwin-arm64 or windows-x64 from
+  [Releases](https://github.com/eased-tech/switchkick/releases), make it executable, and put it on
+  your `PATH` as `switchkick`. Each release has a `SHA256SUMS` file, and every binary has a
+  build attestation, which shows it was built from this repository by its release workflow:
+
+  ```sh
+  sha256sum --check --ignore-missing SHA256SUMS
+  gh attestation verify switchkick-darwin-arm64 --repo eased-tech/switchkick
+  ```
+
+  On Windows, `serve` works, but `setup` installs no service and can't use a credential store,
+  so set `OPENROUTER_API_KEY` instead.
+- **Docker:** see [Docker](#docker). The npm packages are published with
+  [provenance](https://docs.npmjs.com/generating-provenance-statements) too.
+
 `setup` asks for your OpenRouter key and shows what it will change before doing it:
 
 1. **Key.** Stored in the macOS Keychain or, on Linux, the Secret Service (libsecret), under
@@ -68,6 +89,34 @@ where a 402 from OpenRouter (credit, or the key's limit, too low for a request's
 up, rather than in the middle of a session. Claude Code asks for up to `CLAUDE_CODE_MAX_OUTPUT_TOKENS`.
 Codex sets no cap, so OpenRouter prices each Codex request at the model's full output limit,
 and a key with little credit left refuses them all. The checks cost a fraction of a cent.
+
+### Docker
+
+The image at `ghcr.io/eased-tech/switchkick` runs `switchkick serve` for `linux/amd64` and
+`linux/arm64`, as a non-root user, with a healthcheck on `/healthz`. It's configured with
+environment variables. Inside the container switchkick listens on `0.0.0.0`, so
+`SWITCHKICK_TOKEN` is required, and clients send it as their API key:
+
+```sh
+docker run -d --name switchkick -p 127.0.0.1:8787:8787 \
+  -e OPENROUTER_API_KEY -e SWITCHKICK_TOKEN -e SWITCHKICK_MODE=local \
+  -v switchkick-data:/data ghcr.io/eased-tech/switchkick
+```
+
+| Variable | Default in the image | |
+|---|---|---|
+| `OPENROUTER_API_KEY` | | Required. |
+| `SWITCHKICK_TOKEN` | | Required. |
+| `SWITCHKICK_MODE` | `static` | `static`, `hosted` or `local`. |
+| `SWITCHKICK_TIER` | | See [attribution and access](#attribution-and-access). |
+| `SWITCHKICK_PORT` | `8787` | |
+| `SWITCHKICK_CONFIG` | `/config/switchkick/config.yaml` if it exists | Mount a config file for anything else. |
+| `SWITCHKICK_ATTRIBUTION` | | `off` to opt out. |
+
+Sessions and the decision log are written to `/data`; mount a volume there to keep them.
+Images are tagged `latest`, with the version (`X.Y.Z`) and with the minor version (`X.Y`), and
+each has a build attestation: `gh attestation verify oci://ghcr.io/eased-tech/switchkick:<tag> --repo
+eased-tech/switchkick`.
 
 ## Commands
 
@@ -392,6 +441,9 @@ rankings. Nothing identifying you is sent. To opt out, pass `--no-attribution` o
 
 switchkick listens on `127.0.0.1` only by default. To listen on another address, set
 `SWITCHKICK_TOKEN`; clients must then send that token as their API key.
+
+`SWITCHKICK_HOST`, `SWITCHKICK_PORT` and `SWITCHKICK_MODE` work like `--host`, `--port` and
+`--mode`: a flag wins over the variable, and the variable over the config file.
 
 `SWITCHKICK_TIER` routes every request at one tier: in static mode it's the tier (below
 `--tier`), in local mode it skips Jev, and in hosted mode it sets the matching `cost_tier`.

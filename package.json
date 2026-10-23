@@ -18,10 +18,16 @@
     "schema": "UPDATE_SCHEMA=1 vitest run packages/proxy/test/schema.test.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm build && pnpm test",
     "spike:fixtures": "node scripts/spikes/record-fixtures.ts",
-    "spike:jev-latency": "node scripts/spikes/jev-latency.ts"
+    "spike:jev-latency": "node scripts/spikes/jev-latency.ts",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "build:binaries": "node scripts/release/build-binaries.mjs",
+    "smoke": "node scripts/release/smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
     "@types/node": "^22.18.0",
     "fast-check": "^4.10.2",
     "tsup": "^9.0.0",

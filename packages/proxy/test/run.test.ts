@@ -188,6 +188,39 @@ describe("switchkick serve", () => {
     expect(stderr).toContain('--mode must be one of static, hosted, local, got "smart"');
   });
 
+  it("takes the mode from SWITCHKICK_MODE, below --mode", async () => {
+    const env = { SWITCHKICK_MODE: "hosted" };
+    expect(await routedModel((await serve("", [], env)).url)).toBe("typesafe/jev-router");
+    server?.closeAllConnections();
+    server?.close();
+    const { url } = await serve("mode: hosted\n", ["--mode", "static"], env);
+    expect(await routedModel(url)).toBe("anthropic/claude-sonnet-5.5");
+  });
+
+  it("rejects an unknown SWITCHKICK_MODE or SWITCHKICK_PORT", async () => {
+    expect((await serve("", [], { SWITCHKICK_MODE: "smart" })).exitCode).toBe(1);
+    expect(stderr).toContain('SWITCHKICK_MODE must be one of static, hosted, local, got "smart"');
+    // `serve` passes --port, so this run leaves it out for the environment to apply.
+    const result = await run(["serve", "--config", join(dir, "config.yaml")], {
+      env: { SWITCHKICK_PORT: "80a" },
+      findApiKey: async () => ({ key: "sk-test", source: "test" }),
+      stdout: () => {},
+      stderr: (text) => {
+        stderr += text;
+      },
+    });
+    expect(result.exitCode).toBe(1);
+    expect(stderr).toContain('SWITCHKICK_PORT must be an integer from 0 to 65535, got "80a"');
+  });
+
+  it("refuses SWITCHKICK_HOST=0.0.0.0 without a token, and listens with one", async () => {
+    expect((await serve("", [], { SWITCHKICK_HOST: "0.0.0.0" })).exitCode).toBe(1);
+    expect(stderr).toContain("refusing to listen on 0.0.0.0 without SWITCHKICK_TOKEN");
+    const listening = await serve("", [], { SWITCHKICK_HOST: "0.0.0.0", SWITCHKICK_TOKEN: "t" });
+    expect(listening.exitCode).toBe(0);
+    expect((listening.server as Server).address()).toMatchObject({ address: "0.0.0.0" });
+  });
+
   it("refuses a non-loopback host from the config file without a token", async () => {
     const { exitCode, server } = await serve("server: { host: 0.0.0.0 }\n");
     expect(exitCode).toBe(1);
