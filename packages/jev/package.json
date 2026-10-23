@@ -1,6 +1,6 @@
 {
   "name": "@switchkick/jev",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Thin Jev Decisions API client for switchkick, with timeouts and fail-open behavior.",
   "license": "Apache-2.0",
   "homepage": "https://github.com/eased-tech/switchkick#readme",
