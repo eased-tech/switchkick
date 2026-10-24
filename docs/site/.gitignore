@@ -1,0 +1,4 @@
+.astro/
+# Written by scripts/generate.mjs at build time.
+/public/schema/
+/src/content/docs/reference/configuration.md

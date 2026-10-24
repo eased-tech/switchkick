@@ -121,7 +121,8 @@ export function configTemplate(preset: Preset, mode: Mode): string {
   const row = (name: string, model: string) => `#   ${`${name}:`.padEnd(width)} ${model}`;
   return [
     `# yaml-language-server: $schema=${CONFIG_SCHEMA_URL}`,
-    "# Written by `switchkick setup`. Every key is optional; the README lists them all.",
+    "# Written by `switchkick setup`. Every key is optional; they are all listed at",
+    "# https://eased-tech.github.io/switchkick/reference/configuration/",
     `preset: ${preset}`,
     `mode: ${mode}`,
     "defaultTier: balanced",

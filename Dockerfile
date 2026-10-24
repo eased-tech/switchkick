@@ -5,7 +5,8 @@
 #     -e OPENROUTER_API_KEY -e SWITCHKICK_TOKEN -e SWITCHKICK_MODE=local \
 #     -v switchkick-data:/data ghcr.io/eased-tech/switchkick
 #
-# It listens on 0.0.0.0 inside the container, so SWITCHKICK_TOKEN is required. See the README.
+# It listens on 0.0.0.0 inside the container, so SWITCHKICK_TOKEN is required. See
+# https://eased-tech.github.io/switchkick/install/#docker
 
 # The build is plain JavaScript, so it runs once on the build machine's platform and every
 # target platform copies the result. The final stage has no RUN step, so it needs no emulation.

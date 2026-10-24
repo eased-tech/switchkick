@@ -32,6 +32,8 @@ Useful scripts:
 | `pnpm --filter switchkick dev` | rebuild the proxy on change and run `switchkick serve` |
 | `pnpm changeset` | describe your change for the changelog (see below) |
 | `pnpm build:binaries --host` | after `pnpm build`, compile a standalone binary with [Bun](https://bun.sh) into `dist-bin/` |
+| `pnpm --filter @switchkick/docs docs:dev` | serve the documentation site locally, with live reload |
+| `pnpm --filter @switchkick/docs docs:build` | build the site into `docs/site/dist/`; `docs:check` then checks its links |
 | `pnpm smoke <command>` | run a built switchkick against a mock upstream and check responses byte for byte, e.g. `pnpm smoke dist-bin/switchkick-darwin-arm64 serve --config {config} --port {port}` |
 
 ## Layout
@@ -41,6 +43,7 @@ packages/core    pure routing policy, no I/O
 packages/jev     Jev Decisions API client
 packages/proxy   the `switchkick` CLI and HTTP server
 docs/adr/        architecture decision records
+docs/site/       the documentation site (Starlight), published to GitHub Pages
 eval/            labelled prompts for `switchkick eval` (synthetic, never real sessions)
 scripts/release/ binaries, smoke tests, release checks and the Homebrew formula
 scripts/spikes/  scripts that call live APIs (need OPENROUTER_API_KEY)
@@ -53,6 +56,9 @@ resolution requires.
 
 - Keep each pull request to one change, with tests.
 - `pnpm check` must pass.
+- If the change affects what users see or configure, update the page under
+  `docs/site/src/content/docs/` that describes it. The configuration reference is generated from
+  the schema's descriptions, so a schema change updates it without an edit.
 - A change to the config schema is a public API change. Regenerate `schema/v1.json` with
   `pnpm schema` and call the change out in the description.
 - If the change affects users (a feature, a fix, a behavior change), add a changeset with
