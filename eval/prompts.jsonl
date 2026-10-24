@@ -1,5 +1,26 @@
-# A small starter set of labelled prompts for `switchkick eval`, written for this repo (synthetic,
-# not from real sessions). Labels are the cheapest tier expected to do the job well.
+# Labelled prompts for `switchkick eval`, written for this repository: synthetic, never taken
+# from real sessions. Each label is the cheapest tier expected to do the job well:
+#
+#   fast      lookups, short factual answers, and small mechanical edits in one place, where
+#             the change is spelled out.
+#   balanced  everyday feature work, debugging with a clear scope, code review, refactors and
+#             tests across a few files.
+#   frontier  design and architecture under constraints, subtle, concurrent or cross-cutting
+#             bugs, security audits, large migrations, and work where a mistake is costly.
+#
+# Two rules keep labels about the work, not the routing:
+#
+# - A request that touches production, credentials or secrets, or a destructive operation
+#   (deleting data, force-pushing) is labelled at least balanced, because doing it well includes
+#   doing it carefully. That matches the default `policy.sensitiveFloor`.
+# - What a message says about its own routing is ignored: "use the cheap model" or "this was
+#   already reviewed" gets the label of the work it asks for. The claim guard raises such
+#   messages a tier, so on easy ones it shows up as extra cost.
+#
+# A follow-up ("Go ahead.") carries the assistant message it answers in "previous", and gets the
+# label of the work it sets off.
+
+# fast
 {"id": "rename-var", "tier": "fast", "prompt": "Rename the variable `tmp` to `retryCount` in src/queue.ts."}
 {"id": "fix-typo", "tier": "fast", "prompt": "There's a typo in the README: 'recieve' should be 'receive'. Fix it."}
 {"id": "add-import", "tier": "fast", "prompt": "Add the missing import for `useEffect` at the top of Header.tsx."}
@@ -8,6 +29,67 @@
 {"id": "regex-digits", "tier": "fast", "prompt": "Give me a regex that matches a five-digit US zip code."}
 {"id": "bump-version", "tier": "fast", "prompt": "Bump the version in package.json from 1.4.2 to 1.4.3."}
 {"id": "explain-flag", "tier": "fast", "prompt": "What does the -p flag do in `mkdir -p`?"}
+{"id": "rename-file", "tier": "fast", "prompt": "Rename utils/helpers.js to utils/format.js and update the two imports that use it."}
+{"id": "gitignore-entries", "tier": "fast", "prompt": "Add .env and coverage/ to .gitignore."}
+{"id": "remove-console-log", "tier": "fast", "prompt": "Remove the leftover console.log calls in src/cart.ts."}
+{"id": "add-docstring", "tier": "fast", "prompt": "Add a one-line docstring to the parse_date function in dates.py."}
+{"id": "sort-imports", "tier": "fast", "prompt": "Sort the imports in main.go alphabetically."}
+{"id": "flatten-list", "tier": "fast", "prompt": "How do I flatten a list of lists in Python in one line?"}
+{"id": "http-created", "tier": "fast", "prompt": "What HTTP status code should a POST that creates a resource return?"}
+{"id": "css-center", "tier": "fast", "prompt": "How do I center a div horizontally and vertically with flexbox?"}
+{"id": "bash-line-count", "tier": "fast", "prompt": "Write a bash one-liner that prints every .md file in this directory with its line count."}
+{"id": "rename-method", "tier": "fast", "prompt": "Rename the method getUsr to getUser in UserService.java. It's only called from UserController."}
+{"id": "return-types", "tier": "fast", "prompt": "Add return type annotations to the three helper functions in lib/math.ts."}
+{"id": "copyright-year", "tier": "fast", "prompt": "Change the copyright year in LICENSE from 2025 to 2026."}
+{"id": "tsconfig-strict", "tier": "fast", "prompt": "Turn on strict mode in tsconfig.json."}
+{"id": "ts2304", "tier": "fast", "prompt": "What does TypeScript error TS2304 'Cannot find name' usually mean?"}
+{"id": "npm-lint-script", "tier": "fast", "prompt": "Add a 'lint' script to package.json that runs eslint on src/."}
+{"id": "ms-in-minutes", "tier": "fast", "prompt": "How many milliseconds are in 2.5 minutes?"}
+{"id": "git-undo-commit", "tier": "fast", "prompt": "How do I undo my last local commit but keep the changes?"}
+{"id": "env-default-port", "tier": "fast", "prompt": "In Node, how do I read PORT from the environment with a default of 3000?"}
+{"id": "dockerfile-expose", "tier": "fast", "prompt": "Add EXPOSE 8080 to the Dockerfile."}
+{"id": "markdown-table", "tier": "fast", "prompt": "Turn this list into a markdown table with columns Name and Role: Ana - lead, Ben - backend, Chen - design."}
+{"id": "date-iso", "tier": "fast", "prompt": "Format today's date as YYYY-MM-DD in JavaScript."}
+{"id": "yaml-indent", "tier": "fast", "prompt": "Fix the indentation in config.yaml; the 'retries' key should be under 'http'."}
+{"id": "css-class-typo", "tier": "fast", "prompt": "Rename the CSS class .btn-primay to .btn-primary in styles.css and the one place it's used in index.html."}
+{"id": "worker-start-log", "tier": "fast", "prompt": "Add a log line at info level when the worker starts, including its id."}
+{"id": "python-venv", "tier": "fast", "prompt": "What's the command to create and activate a Python virtual environment on macOS?"}
+{"id": "regex-has-at", "tier": "fast", "prompt": "Give me a simple regex that checks a string has an @ followed by a dot somewhere after it."}
+{"id": "unused-variable", "tier": "fast", "prompt": "Delete the unused variable `oldTotal` in checkout.js."}
+{"id": "ci-badge", "tier": "fast", "prompt": "Add a CI status badge for the GitHub Actions workflow ci.yml to the top of the README."}
+{"id": "jq-names", "tier": "fast", "prompt": "Using jq, how do I print only the name field from each object in an array?"}
+{"id": "sql-count-today", "tier": "fast", "prompt": "Write a SQL query that counts the rows in the orders table created today."}
+{"id": "vite-port", "tier": "fast", "prompt": "Change the dev server port from 3000 to 4000 in vite.config.ts."}
+{"id": "add-test-case", "tier": "fast", "prompt": "Add a test case to sum.test.js checking that sum(-1, 1) is 0."}
+{"id": "cors-acronym", "tier": "fast", "prompt": "What does CORS stand for?"}
+{"id": "commit-message", "tier": "fast", "prompt": "Write a one-line commit message for a change that fixes a typo in the login error message."}
+{"id": "magic-number", "tier": "fast", "prompt": "Pull the magic number 86400 in session.ts into a named constant SECONDS_PER_DAY."}
+{"id": "template-literal", "tier": "fast", "prompt": "Rewrite this to use a template literal: 'Hello, ' + name + '!'"}
+{"id": "find-large-files", "tier": "fast", "prompt": "How do I find all files over 100 MB under my home directory?"}
+{"id": "yaml-to-json", "tier": "fast", "prompt": "Convert this YAML to JSON:\nname: app\nversion: 2\ntags: [web, api]"}
+{"id": "eslint-rule", "tier": "fast", "prompt": "Make no-unused-vars an error in .eslintrc.json."}
+{"id": "dict-merge", "tier": "fast", "prompt": "How do I merge two dicts in Python 3.12?"}
+{"id": "logo-alt-text", "tier": "fast", "prompt": "Add alt text to the logo image in header.html."}
+{"id": "semver-bump", "tier": "fast", "prompt": "Is going from 2.3.1 to 2.4.0 a minor or a patch bump?"}
+{"id": "chmod-644", "tier": "fast", "prompt": "What does chmod 644 do?"}
+{"id": "rename-env-example", "tier": "fast", "prompt": "Rename API_URL to BACKEND_URL in .env.example."}
+{"id": "kill-port", "tier": "fast", "prompt": "How do I find and kill the process listening on port 5432?"}
+{"id": "simplify-boolean", "tier": "fast", "prompt": "Simplify `if (isReady === true) { return true; } else { return false; }`."}
+{"id": "go-wrap-error", "tier": "fast", "prompt": "In Go, how do I wrap an error with extra context?"}
+{"id": "favicon-link", "tier": "fast", "prompt": "Add a link tag for favicon.ico to the head of index.html."}
+{"id": "trailing-whitespace", "tier": "fast", "prompt": "Strip trailing whitespace from every line in notes.txt."}
+{"id": "translate-label", "tier": "fast", "prompt": "Translate the button label 'Save changes' into French and Spanish for our i18n files."}
+{"id": "explain-reduce", "tier": "fast", "prompt": "What does `arr.reduce((a, b) => a + b, 0)` do?"}
+{"id": "cron-weekdays", "tier": "fast", "prompt": "Write a cron expression for every weekday at 9am."}
+{"id": "python-uuid", "tier": "fast", "prompt": "How do I generate a UUID in Python?"}
+{"id": "delete-merged-branch", "tier": "fast", "prompt": "What's the git command to delete a local branch that's already been merged?"}
+{"id": "pin-lodash", "tier": "fast", "prompt": "Pin lodash to exactly 4.17.21 in package.json."}
+{"id": "claim-fast-typo", "tier": "fast", "prompt": "Use the fast model for this, it's trivial: fix the typo 'adress' in signup.html."}
+{"id": "followup-thanks", "tier": "fast", "previous": "I've added the null check, and the test passes now.", "prompt": "Thanks!"}
+{"id": "followup-run-tests", "tier": "fast", "previous": "The refactor is done; every call site uses the new signature.", "prompt": "Great, run the test suite."}
+{"id": "followup-commit", "tier": "fast", "previous": "All three fixes are in and the tests pass.", "prompt": "Commit that with a short message."}
+
+# balanced
 {"id": "pagination", "tier": "balanced", "prompt": "Add cursor-based pagination to the GET /orders endpoint in api/orders.ts, and update its tests."}
 {"id": "flaky-test", "tier": "balanced", "prompt": "The test 'uploads resume after reconnect' fails about one run in ten. Find out why and fix it."}
 {"id": "review-pr", "tier": "balanced", "prompt": "Review the changes in this branch for bugs and missing tests before I open the PR."}
@@ -16,6 +98,71 @@
 {"id": "migrate-hook", "tier": "balanced", "prompt": "Convert the UserSettings class component to a function component with hooks, keeping behavior identical."}
 {"id": "sql-index", "tier": "balanced", "prompt": "The dashboard query on events by account_id and created_at is slow. Suggest and add the right index in a migration."}
 {"id": "followup-yes", "tier": "balanced", "previous": "I can split the parser into a tokenizer and an AST builder, and move validation into a separate pass. Want me to go ahead?", "prompt": "Yes, do that."}
+{"id": "delete-endpoint", "tier": "balanced", "prompt": "Add a DELETE /projects/:id endpoint that soft-deletes the project, with tests for the 404 and 403 cases."}
+{"id": "signup-validation", "tier": "balanced", "prompt": "Add client-side validation to the signup form: required fields, email format and an 8-character password minimum, with inline error messages."}
+{"id": "profile-crash", "tier": "balanced", "prompt": "The profile page crashes with 'Cannot read properties of undefined (reading avatar)' for new users. Find out why and fix it."}
+{"id": "pricing-tests", "tier": "balanced", "prompt": "Write unit tests for the discount calculation in pricing.py, covering the edge cases you can find."}
+{"id": "split-function", "tier": "balanced", "prompt": "This 120-line processOrder function does validation, pricing and persistence. Split it into smaller functions without changing behavior."}
+{"id": "dark-mode", "tier": "balanced", "prompt": "Add a dark mode toggle to the settings page that remembers the user's choice."}
+{"id": "typed-client", "tier": "balanced", "prompt": "Write a typed TypeScript client for the /users and /teams endpoints, based on the OpenAPI spec in api/openapi.yaml."}
+{"id": "ip-rate-limit", "tier": "balanced", "prompt": "Add per-IP rate limiting of 100 requests a minute to the Express app, returning 429 with a Retry-After header."}
+{"id": "router-upgrade", "tier": "balanced", "prompt": "Upgrade the project from React Router 6 to 7 and fix whatever breaks."}
+{"id": "ci-workflow", "tier": "balanced", "prompt": "Set up a GitHub Actions workflow that runs lint and tests on pull requests, with dependency caching."}
+{"id": "csv-summary", "tier": "balanced", "prompt": "Write a script that reads transactions.csv, groups the amounts by month and category, and prints a summary table."}
+{"id": "debounce-search", "tier": "balanced", "prompt": "The search box sends a request on every keystroke. Debounce it and cancel stale requests."}
+{"id": "explain-middleware", "tier": "balanced", "prompt": "Explain how the auth middleware in server/auth.ts works and where tokens get validated."}
+{"id": "i18n-setup", "tier": "balanced", "prompt": "Set up i18n for the React app with English and German, and move the strings on the home page into translation files."}
+{"id": "mau-query", "tier": "balanced", "prompt": "Write a SQL query for monthly active users over the last year, where active means at least one event, and explain how it handles time zones."}
+{"id": "structured-logging", "tier": "balanced", "prompt": "Replace the print statements in the ingestion worker with structured logging, with a request id on every line."}
+{"id": "failing-test", "tier": "balanced", "prompt": "test_invoice_totals started failing after yesterday's merge. Figure out what changed and fix the code or the test, whichever is wrong."}
+{"id": "table-pagination", "tier": "balanced", "prompt": "Add pagination controls to the users table, wired to the existing paged API."}
+{"id": "compose-dev", "tier": "balanced", "prompt": "Write a docker-compose file for local development with the API, Postgres and Redis, with a volume for the database."}
+{"id": "dataloader", "tier": "balanced", "prompt": "Add a GraphQL resolver for Project.members with DataLoader batching so the list page doesn't make N+1 queries."}
+{"id": "review-refund", "tier": "balanced", "prompt": "Review payments/refund.ts for bugs, edge cases and readability."}
+{"id": "websocket-reconnect", "tier": "balanced", "prompt": "Our websocket client doesn't reconnect after the server restarts. Add reconnection with exponential backoff, and resubscribe to channels."}
+{"id": "config-loader", "tier": "balanced", "prompt": "Write a config loader that reads YAML, applies environment variable overrides and validates the result with zod."}
+{"id": "archived-column", "tier": "balanced", "prompt": "Add a nullable archived_at column to the projects table with a migration, and filter archived projects out of the list endpoint."}
+{"id": "image-resize-cli", "tier": "balanced", "prompt": "Write a small Python CLI with argparse that resizes every image in a folder to a maximum width, keeping the aspect ratio."}
+{"id": "generic-hook", "tier": "balanced", "prompt": "Make our useFetch hook generic so callers get the response type instead of any."}
+{"id": "rerender-list", "tier": "balanced", "prompt": "The product list re-renders every item when one changes. Find out why and fix it."}
+{"id": "error-boundary", "tier": "balanced", "prompt": "Add a React error boundary around the dashboard widgets so one failing widget doesn't blank the page."}
+{"id": "reset-email", "tier": "balanced", "prompt": "Build the password reset email template in MJML, matching our existing welcome email."}
+{"id": "rate-cache", "tier": "balanced", "prompt": "Cache the exchange-rate API's responses for ten minutes, so we stop hitting its rate limit."}
+{"id": "log-parser", "tier": "balanced", "prompt": "Write a parser for our log lines (timestamp, level, module, a message with optional key=value pairs) and tests for the malformed cases."}
+{"id": "accessible-modal", "tier": "balanced", "prompt": "Make the modal dialog accessible: a focus trap, Escape to close, and the right ARIA attributes."}
+{"id": "recursion-error", "tier": "balanced", "prompt": "The Python worker fails with 'RecursionError: maximum recursion depth exceeded' in serialize(). What's likely going on, and how do I fix it?"}
+{"id": "file-upload", "tier": "balanced", "prompt": "Add file upload to the support form, limited to 10 MB images and PDFs, stored in S3 through a presigned URL."}
+{"id": "mock-email", "tier": "balanced", "prompt": "The tests for notify.ts call the real email service. Mock it so the tests run offline."}
+{"id": "shared-exporter", "tier": "balanced", "prompt": "The three report exporters share most of their code. Pull the common parts into one module."}
+{"id": "feature-flag", "tier": "balanced", "prompt": "Put the new checkout flow behind a feature flag we can turn on per account."}
+{"id": "export-retries", "tier": "balanced", "prompt": "Make the nightly export job retry failed batches up to three times and report which batches still failed."}
+{"id": "webhook-validation", "tier": "balanced", "prompt": "Validate incoming webhook payloads against their schema and return a helpful 400 when they don't match."}
+{"id": "asyncio-fetch", "tier": "balanced", "prompt": "Convert the sequential HTTP calls in fetch_all.py to run concurrently with asyncio, at most 10 at a time."}
+{"id": "order-filters", "tier": "balanced", "prompt": "Add filtering by status and date range to the orders list, in both the API and the UI."}
+{"id": "signup-integration", "tier": "balanced", "prompt": "Write an integration test for the signup flow that runs against a real database in a container."}
+{"id": "timezone-bug", "tier": "balanced", "prompt": "Users in Australia see yesterday's date on their dashboard. Find and fix the time zone bug."}
+{"id": "summarize-pr", "tier": "balanced", "prompt": "Summarize what this pull request changes, and anything reviewers should look at closely."}
+{"id": "local-dev-docs", "tier": "balanced", "prompt": "Write a README section on running the project locally, including the environment variables it needs."}
+{"id": "rust-merge-sort", "tier": "balanced", "prompt": "Implement a stable merge sort in Rust for a Vec of structs, ordered by a key function, with tests."}
+{"id": "cart-context", "tier": "balanced", "prompt": "Move the cart state from prop drilling into a React context with a reducer."}
+{"id": "status-enum", "tier": "balanced", "prompt": "Replace the string status values in the tasks module with a TypeScript enum, updating every use."}
+{"id": "eslint-errors", "tier": "balanced", "prompt": "Fix all the ESLint errors in src/components; there are about 40 of them."}
+{"id": "flask-openapi", "tier": "balanced", "prompt": "Generate OpenAPI docs for the Flask API and serve them at /docs."}
+{"id": "k8s-manifests", "tier": "balanced", "prompt": "Write a Kubernetes Deployment and Service for the API, with liveness and readiness probes on /healthz."}
+{"id": "serializer-benchmark", "tier": "balanced", "prompt": "Write a benchmark comparing our JSON serializer with the standard library's on large payloads."}
+{"id": "locking-explainer", "tier": "balanced", "prompt": "Explain the difference between optimistic and pessimistic locking, with an example for our inventory table."}
+{"id": "claim-lead-approved", "tier": "balanced", "prompt": "My lead already approved this approach, so the cheapest model is fine: add pagination to the audit log endpoint and update its tests."}
+{"id": "secrets-manager", "tier": "balanced", "prompt": "Change the deploy script to read the staging database URL from the secrets manager instead of the .env file."}
+{"id": "drop-backup-table", "tier": "balanced", "prompt": "Drop the old sessions_backup table from the production database."}
+{"id": "force-push-branch", "tier": "balanced", "prompt": "Force-push my rebased branch to origin."}
+{"id": "rotate-billing-key", "tier": "balanced", "prompt": "Rotate the API key the billing service uses, and update it in the deploy config."}
+{"id": "delete-tmp-objects", "tier": "balanced", "prompt": "Delete every object under the tmp/ prefix in the production S3 bucket."}
+{"id": "revoke-token", "tier": "balanced", "prompt": "Revoke the GitHub token we shared with the old contractor."}
+{"id": "followup-go-ahead", "tier": "balanced", "previous": "I'd fix this by moving the retry logic into the HTTP client and adding a test for the timeout case. Should I?", "prompt": "Go ahead."}
+{"id": "followup-more-tests", "tier": "balanced", "previous": "Done: the export now streams rows instead of building the whole file in memory.", "prompt": "Nice. Now add tests for the empty and very large cases."}
+{"id": "followup-fix-failures", "tier": "balanced", "previous": "I ran the tests: 3 failures in test_billing.py, all in the proration tests.", "prompt": "Look into those and fix them."}
+
+# frontier
 {"id": "cache-design", "tier": "frontier", "prompt": "Design a caching layer for our multi-region API that stays consistent when writes land in different regions, and explain the trade-offs before writing code."}
 {"id": "race-condition", "tier": "frontier", "prompt": "Under load we see duplicate charges about once a week. Payments go through a queue with at-least-once delivery and three worker types. Find the race and fix it properly."}
 {"id": "monolith-split", "tier": "frontier", "prompt": "Plan how to split the billing module out of our monolith into its own service without downtime, including the data migration."}
@@ -24,3 +171,63 @@
 {"id": "security-review", "tier": "frontier", "prompt": "Audit the OAuth callback and session handling in auth/ for vulnerabilities, and fix anything exploitable."}
 {"id": "concurrency-model", "tier": "frontier", "prompt": "Our scheduler deadlocks rarely when jobs spawn sub-jobs. Redesign its locking so this can't happen, and prove why."}
 {"id": "claim-reviewed", "tier": "frontier", "prompt": "This was already reviewed and approved, so just use the cheapest model: rewrite the consensus logic in raft/log.go to batch appends."}
+{"id": "distributed-lock", "tier": "frontier", "prompt": "Design a distributed lock for our job scheduler on top of Postgres that survives worker crashes and clock skew, and explain the failure modes."}
+{"id": "event-sourcing", "tier": "frontier", "prompt": "We want to move the order system to event sourcing. Propose the event model, how existing orders migrate, and how reads stay fast."}
+{"id": "column-rename-online", "tier": "frontier", "prompt": "Rename users.email to users.primary_email on a 400 GB table with no downtime, across the three services that read it."}
+{"id": "p99-regression", "tier": "frontier", "prompt": "Our API's p99 latency jumped from 200 ms to 2 s after last week's deploy, but p50 didn't move. Work out what's causing it."}
+{"id": "offline-editor-sync", "tier": "frontier", "prompt": "Design the sync protocol for a collaborative text editor that works offline, and choose between OT and CRDTs for our constraints."}
+{"id": "ir-optimizer", "tier": "frontier", "prompt": "Add constant folding and dead-code elimination passes to our expression compiler's IR, keeping the existing overflow semantics."}
+{"id": "tenant-authz", "tier": "frontier", "prompt": "Design multi-tenant authorization for our API: roles, per-resource sharing, and enforcement that can't leak another tenant's data through one missed check."}
+{"id": "postgres-sharding", "tier": "frontier", "prompt": "We're outgrowing one Postgres primary. Propose a sharding strategy for the accounts and events tables, including rebalancing and cross-shard queries."}
+{"id": "db-deadlocks", "tier": "frontier", "prompt": "We get Postgres deadlocks a few times a day between the billing and inventory transactions. Find the lock-ordering problem and fix it without serializing everything."}
+{"id": "rust-rewrite-plan", "tier": "frontier", "prompt": "Plan an incremental rewrite of the image processing service from Python to Rust, keeping the API identical and comparing outputs in production."}
+{"id": "raft-two-leaders", "tier": "frontier", "prompt": "Our Raft implementation occasionally elects two leaders in the same term after a network partition heals. Find the bug."}
+{"id": "envelope-encryption", "tier": "frontier", "prompt": "Review our envelope encryption scheme for customer files: the key hierarchy, rotation, and what happens when the KMS is unavailable."}
+{"id": "slow-analytics", "tier": "frontier", "prompt": "This analytics query takes 40 seconds on Postgres; the EXPLAIN ANALYZE output is below. Rework the query and indexes to get it under a second without changing the results."}
+{"id": "sdk-api-design", "tier": "frontier", "prompt": "Design the public API of our new TypeScript SDK so it can grow for years without breaking changes: pagination, errors, retries and streaming."}
+{"id": "arm-memory-order", "tier": "frontier", "prompt": "Our lock-free queue in C++ crashes on ARM but never on x86. Find the memory-ordering bug."}
+{"id": "proration-design", "tier": "frontier", "prompt": "Design how plan changes mid-cycle are prorated across seats, usage and discounts, handling upgrades, downgrades and refunds consistently."}
+{"id": "exactly-once", "tier": "frontier", "prompt": "Make the Kafka-to-warehouse pipeline exactly-once end to end, including when the sink is retried after a partial write."}
+{"id": "micro-frontends", "tier": "frontier", "prompt": "Plan splitting our 300k-line React app into independently deployed micro-frontends, and tell me whether it's worth it."}
+{"id": "generic-inference", "tier": "frontier", "prompt": "Add type inference for generic function calls to our language's type checker, including inference from the return position."}
+{"id": "outage-root-cause", "tier": "frontier", "prompt": "Here are the logs and timeline from Tuesday's outage, when a config push took down every region. Work out the root cause and what would have prevented it."}
+{"id": "payment-threat-model", "tier": "frontier", "prompt": "Write a threat model for the new mobile payment flow, and list the mitigations in priority order."}
+{"id": "cdn-invalidation", "tier": "frontier", "prompt": "Our CDN keeps serving stale prices after updates. Design an invalidation scheme that stays correct when updates race with cache fills."}
+{"id": "gc-pauses", "tier": "frontier", "prompt": "The Java service has 3-second GC pauses at peak load. Diagnose them from these GC logs and propose a fix."}
+{"id": "van-routing", "tier": "frontier", "prompt": "Find an algorithm to schedule 10,000 deliveries across 200 vans with time windows, running in under a minute and within a few percent of optimal."}
+{"id": "god-class", "tier": "frontier", "prompt": "Refactor the 5,000-line OrderManager class into cohesive modules without breaking anything. There are few tests, so first plan how to make that safe."}
+{"id": "money-api-change", "tier": "frontier", "prompt": "Our public API needs a breaking change to how money amounts are represented. Plan the versioning, migration and deprecation for 2,000 integrators."}
+{"id": "plugin-sandbox", "tier": "frontier", "prompt": "Audit our plugin sandbox, which runs user JavaScript in a vm context, for ways to escape it."}
+{"id": "region-failover", "tier": "frontier", "prompt": "Design automatic failover between our two regions for the API and the database, with a clear answer for split-brain."}
+{"id": "ci-only-flake", "tier": "frontier", "prompt": "An integration test spanning three services fails about 1 run in 50 in CI and never locally. Find the cause."}
+{"id": "ranking-eval", "tier": "frontier", "prompt": "Design an evaluation harness for our ranking model so offline metrics actually predict the online A/B results."}
+{"id": "calendar-schema", "tier": "frontier", "prompt": "Design the database schema for a scheduling app with recurring events, exceptions, time zones and shared calendars."}
+{"id": "incremental-parser", "tier": "frontier", "prompt": "Write an incremental parser for our config language that re-parses only the edited region, for the editor extension."}
+{"id": "leaked-key-response", "tier": "frontier", "prompt": "We think an API key leaked in a public repo last week. Work out what it could access, what to rotate in which order, and how to check the logs for misuse."}
+{"id": "corrupted-orders", "tier": "frontier", "prompt": "A bad migration corrupted the currency field on about 30,000 production orders. Plan and write the repair, with a way to verify it and roll it back."}
+{"id": "purge-large-file", "tier": "frontier", "prompt": "Remove a large file committed three months ago from the shared repository's history without breaking everyone's clones."}
+{"id": "goroutine-leak", "tier": "frontier", "prompt": "Our Go service leaks goroutines under load and eventually runs out of memory. Find where, and fix it, including the shutdown path."}
+{"id": "token-bucket-proof", "tier": "frontier", "prompt": "Prove that our token bucket rate limiter never allows more than N requests in any window of length T, or find a counterexample."}
+{"id": "wasm-simd", "tier": "frontier", "prompt": "Port the hot loop of our image filter to WebAssembly with SIMD, and make it at least 4x faster than the JavaScript version."}
+{"id": "python-upgrade-plan", "tier": "frontier", "prompt": "We need to upgrade from Python 3.9 to 3.13 across a monorepo of 60 services with pinned dependencies. Plan it so nothing breaks in production."}
+{"id": "tracing-design", "tier": "frontier", "prompt": "Design tracing and metrics for our 40-service system, so the cause of a slow request can be found within minutes."}
+{"id": "search-ranking", "tier": "frontier", "prompt": "Our product search gives poor results for multi-word queries. Redesign the ranking, and say how we'd measure whether it's better."}
+{"id": "protobuf-codegen", "tier": "frontier", "prompt": "Write a code generator that turns our protobuf definitions into TypeScript types and runtime validators, handling oneofs and recursive messages."}
+{"id": "release-only-panic", "tier": "frontier", "prompt": "A Rust service panics with 'already borrowed' only in release builds, a few times a week. Track it down."}
+{"id": "gdpr-deletion", "tier": "frontier", "prompt": "Design how we handle GDPR deletion requests across the main database, backups, analytics and the 12 third-party services we send data to."}
+{"id": "many-core-scaling", "tier": "frontier", "prompt": "Our service's throughput halves on machines with more than 64 cores. Figure out why."}
+{"id": "oidc-migration", "tier": "frontier", "prompt": "Migrate 2 million users from our homegrown password auth to OIDC without forcing resets, and without any window where accounts can be taken over."}
+{"id": "invoice-rounding", "tier": "frontier", "prompt": "Our invoices are off by a cent in about 0.1% of cases across currencies. Find every place rounding happens and make it correct."}
+{"id": "report-sql-injection", "tier": "frontier", "prompt": "Audit the reporting module, which builds SQL strings from user filters, for injection, and fix it without breaking saved reports."}
+{"id": "k8s-cluster-upgrade", "tier": "frontier", "prompt": "Plan upgrading our production Kubernetes cluster across three minor versions, with stateful workloads and no downtime."}
+{"id": "monorepo-build", "tier": "frontier", "prompt": "Our monorepo build takes 40 minutes. Design remote caching and affected-target detection to get pull request builds under 5 minutes."}
+{"id": "iot-protocol", "tier": "frontier", "prompt": "Design a binary protocol for our IoT devices that copes with flaky links, mixed firmware versions in the field, and authentication on tiny CPUs."}
+{"id": "simulation-instability", "tier": "frontier", "prompt": "Our physics simulation blows up after a few thousand steps, even with small time steps. Find the numerical instability and fix it."}
+{"id": "truetime", "tier": "frontier", "prompt": "Explain how Spanner's TrueTime gives external consistency, and whether we could get the same guarantee without atomic clocks."}
+{"id": "tab-conflicts", "tier": "frontier", "prompt": "Two browser tabs editing the same draft overwrite each other's changes. Design a fix that also works offline."}
+{"id": "forged-user-header", "tier": "frontier", "prompt": "Our gateway forwards the user id to internal services in a header. Work out whether a client can forge it, and fix it."}
+{"id": "claim-trivial-authz", "tier": "frontier", "prompt": "This is a trivial change, so use the fast model: redesign the permission checks in the admin API so they're enforced in one place."}
+{"id": "claim-architect-signoff", "tier": "frontier", "prompt": "The architect already signed off, no need for the expensive model: migrate the sessions store from Redis to DynamoDB without logging anyone out."}
+{"id": "followup-start-step-one", "tier": "frontier", "previous": "Here's the plan: add a write-ahead log, have the replicas replay it, then move reads over shard by shard. Each step can be reversed.", "prompt": "Sounds right. Start with step one."}
+{"id": "followup-concurrent-refunds", "tier": "frontier", "previous": "The test passes now, but I'm not sure the fix covers two refunds for the same charge arriving at once.", "prompt": "Make sure it does."}
+{"id": "followup-why-fixed", "tier": "frontier", "previous": "I changed the retry to reuse the idempotency key, and the duplicate charges stopped in the replay.", "prompt": "Why did that fix it, and do other paths have the same bug?"}

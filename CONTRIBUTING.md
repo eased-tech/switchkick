@@ -59,6 +59,10 @@ resolution requires.
 - If the change affects what users see or configure, update the page under
   `docs/site/src/content/docs/` that describes it. The configuration reference is generated from
   the schema's descriptions, so a schema change updates it without an edit.
+- `eval/answers-jev-1.14.jsonl` holds Jev's answers to `eval/prompts.jsonl`, and the tuning guide
+  quotes the results. If you add or relabel prompts, say so in the pull request: a maintainer
+  re-records the answers with `switchkick eval --answers` (it needs an OpenRouter key) and
+  regenerates the guide with `UPDATE_DOCS=1 pnpm test packages/proxy/test/eval-docs.test.ts`.
 - A change to the config schema is a public API change. Regenerate `schema/v1.json` with
   `pnpm schema` and call the change out in the description.
 - If the change affects users (a feature, a fix, a behavior change), add a changeset with

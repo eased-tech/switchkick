@@ -2,7 +2,8 @@
 
 > **Status: pre-alpha.** All three routing modes work: static (one configured tier), hosted
 > (OpenRouter's Jev router picks the model) and local (switchkick asks Jev and applies its own
-> policy). The acceptance thresholds in local mode are untuned starting values.
+> policy). Local mode's acceptance thresholds are tuned on a synthetic set of 206 labelled
+> prompts; see [tuning local mode](https://eased-tech.github.io/switchkick/guides/tuning/).
 
 switchkick is a local proxy for coding agents and OpenAI/Anthropic SDK apps. It accepts
 OpenAI Chat Completions, OpenAI Responses and Anthropic Messages requests, sends them through
@@ -56,13 +57,11 @@ Every key is optional. Start the file with the schema line for completion in you
 # yaml-language-server: $schema=https://eased-tech.github.io/switchkick/schema/v1.json
 mode: local
 preset: claude-only
-policy:
-  accept: { fast: 0.85, balanced: 0.60, frontier: 0.30 }
 ```
 
-The [configuration reference](https://eased-tech.github.io/switchkick/reference/configuration/) lists every key. The schema is
-generated into [`schema/v1.json`](schema/v1.json); unknown keys are rejected so typos don't go
-unnoticed.
+The [configuration reference](https://eased-tech.github.io/switchkick/reference/configuration/)
+lists every key. The schema is generated into [`schema/v1.json`](schema/v1.json); unknown keys are
+rejected so typos don't go unnoticed.
 
 ## Commands
 

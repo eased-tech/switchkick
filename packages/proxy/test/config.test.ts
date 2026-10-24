@@ -37,7 +37,7 @@ describe("parseConfig", () => {
       log: { enabled: true, maxBytes: 50 * 1024 ** 2 },
       policy: {
         session: "ratchet",
-        accept: { fast: 0.85, balanced: 0.6, frontier: 0.3 },
+        accept: { fast: 0.8, balanced: 0.6, frontier: 0.3 },
         sensitiveFloor: "balanced",
         claimGuard: true,
         idleResetMinutes: 30,

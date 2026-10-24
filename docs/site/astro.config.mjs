@@ -23,6 +23,7 @@ export default defineConfig({
       sidebar: [
         { label: "Start here", items: ["getting-started", "install", "clients"] },
         { label: "Routing", items: ["routing/static", "routing/hosted", "routing/local"] },
+        { label: "Guides", items: ["guides/tuning"] },
         {
           label: "Reference",
           items: ["reference/configuration", "reference/commands", "reference/logging"],

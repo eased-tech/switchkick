@@ -27,7 +27,7 @@ export interface Policy {
 }
 
 export const DEFAULT_ACCEPT: Readonly<Record<Tier, number>> = {
-  fast: 0.85,
+  fast: 0.8,
   balanced: 0.6,
   frontier: 0.3,
 };

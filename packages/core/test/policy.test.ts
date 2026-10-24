@@ -39,7 +39,7 @@ describe("pickTier", () => {
   });
 
   it("takes the more capable of the top two when the top tier misses its bar", () => {
-    expect(pickTier(probs(0.8, 0.15, 0.05), DEFAULT_ACCEPT)).toBe("balanced");
+    expect(pickTier(probs(0.75, 0.2, 0.05), DEFAULT_ACCEPT)).toBe("balanced");
     expect(pickTier(probs(0.5, 0, 0.5), DEFAULT_ACCEPT)).toBe("frontier");
     expect(pickTier(probs(0.05, 0.55, 0.4), DEFAULT_ACCEPT)).toBe("frontier");
   });

@@ -131,7 +131,8 @@ export const ConfigSchema = z
           .default({ ...DEFAULT_ACCEPT })
           .describe(
             "Probability Jev's top tier needs to be accepted. Below it, the more capable of " +
-              "Jev's top two tiers is used. Cheaper tiers should need more confidence.",
+              "Jev's top two tiers is used. Cheaper tiers should need more confidence. `frontier` " +
+              "has no effect: below its bar, the more capable of the top two is still frontier.",
           ),
         sensitiveFloor: z
           .enum(TIERS)
