@@ -58,7 +58,7 @@ describe("switchkick eval", () => {
     expect(machine.fetches).toHaveLength(4);
 
     const result = JSON.parse(machine.stdout) as EvalResult;
-    // a: fast 0.95 ≥ 0.85 → fast. b: fast 0.7 < 0.85 → balanced (below bar, take the dearer).
+    // a: fast 0.95 ≥ 0.8 → fast. b: fast 0.7 < 0.8 → balanced (below bar, take the dearer).
     // c: balanced 0.7 ≥ 0.6 → balanced. d: balanced 0.6 ≥ 0.6 → balanced, under its label.
     expect(result.score).toMatchObject({ scored: 4, correct: 2, under: 1, over: 1 });
     expect(result.score.confusion.fast).toEqual({ fast: 1, balanced: 1, frontier: 0 });
@@ -73,7 +73,7 @@ describe("switchkick eval", () => {
     expect(await machine.run(["eval", "--from", answers])).toBe(0);
     expect(machine.fetches).toHaveLength(4);
     expect(machine.stdout).toContain("Accuracy 50% (2/4)");
-    expect(machine.stdout).toContain("0.85   50% /  25% /  25% ← current");
+    expect(machine.stdout).toContain("0.80   50% /  25% /  25% ← current");
   });
 
   it("reports a set it can't read", async () => {

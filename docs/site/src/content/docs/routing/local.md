@@ -19,7 +19,7 @@ tiers:
 trusted: { model: anthropic/claude-sonnet-5.5 }
 policy:
   session: ratchet             # ratchet | sticky | per-request
-  accept: { fast: 0.85, balanced: 0.60, frontier: 0.30 }
+  accept: { fast: 0.80, balanced: 0.60, frontier: 0.30 }
   sensitiveFloor: balanced
   claimGuard: true
   idleResetMinutes: 30
@@ -124,4 +124,5 @@ answers, the guards that fired, latency and cost. If a secret was found, the log
 
 The `policy.accept` bars decide how sure Jev must be before a cheaper tier is used.
 `switchkick eval` measures them against labelled prompts; see
-[the command reference](/switchkick/reference/commands/#eval).
+[tuning local mode](/switchkick/guides/tuning/) for how the defaults were chosen and how to tune
+them for your own prompts.

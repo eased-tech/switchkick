@@ -150,7 +150,7 @@
       "default": {
         "session": "ratchet",
         "accept": {
-          "fast": 0.85,
+          "fast": 0.8,
           "balanced": 0.6,
           "frontier": 0.3
         },
@@ -178,15 +178,15 @@
         },
         "accept": {
           "default": {
-            "fast": 0.85,
+            "fast": 0.8,
             "balanced": 0.6,
             "frontier": 0.3
           },
-          "description": "Probability Jev's top tier needs to be accepted. Below it, the more capable of Jev's top two tiers is used. Cheaper tiers should need more confidence.",
+          "description": "Probability Jev's top tier needs to be accepted. Below it, the more capable of Jev's top two tiers is used. Cheaper tiers should need more confidence. `frontier` has no effect: below its bar, the more capable of the top two is still frontier.",
           "type": "object",
           "properties": {
             "fast": {
-              "default": 0.85,
+              "default": 0.8,
               "type": "number",
               "minimum": 0,
               "maximum": 1
