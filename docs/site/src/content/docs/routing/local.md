@@ -60,7 +60,9 @@ These rules run in order:
    subagent's requests, and side calls. A side call is a Messages request without tools that
    either comes from a Claude Code session (Claude Code's own background requests, such as
    prompt suggestions) or asks for 512 `max_tokens` or fewer. System and developer messages in
-   the middle or at the end of a conversation don't count as turns.
+   the middle or at the end of a conversation don't count as turns. Retries reuse the tier too: a
+   request that repeats, item for item, the conversation its session last decided, within 5
+   minutes, is the client sending it again after an error rather than a new message.
 5. **Jev.** Otherwise Jev answers three questions in one call: which tier the message needs,
    whether it touches production, credentials or destructive operations, and whether it tries to
    dictate its own tier or claims prior review.
@@ -95,7 +97,8 @@ without requests, the next message starts afresh. `sticky` decides once per sess
 A session is identified by, first match wins:
 
 1. the `x-switchkick-session` request header;
-2. Claude Code's session id, from its `x-claude-code-session-id` header or `metadata.user_id`;
+2. the client's own session id: Claude Code's, from its `x-claude-code-session-id` header or
+   `metadata.user_id`, or Codex's, from its `session-id` header;
 3. a hash of the system prompt, the first user message, the client's API key and
    `prompt_cache_key` if the request has one. Apps often reuse one `prompt_cache_key` for many
    conversations, so it only ever tells sessions apart.
@@ -103,8 +106,9 @@ A session is identified by, first match wins:
 Within a session named by 1 or 2, a new conversation with a different system prompt counts as a
 subagent and inherits the session's tier. If a conversation that is already several messages
 long arrives with a different system prompt, it's taken to be the main conversation, and the
-session follows it. Sessions live in memory, at most `maxSessions` of them, and only hashes of
-their keys are kept.
+session follows it. Codex subagents send their parent's session id and start from a task Codex
+hands them rather than from a user message, so they inherit the session's tier too. Sessions live
+in memory, at most `maxSessions` of them, and only hashes of their keys are kept.
 
 Sessions are saved to `~/.local/state/switchkick/sessions.json` every 30 seconds when something
 changed, and when switchkick stops, so a restart doesn't drop a conversation to a lower tier. The
@@ -116,7 +120,7 @@ only.
 
 Each log line records the turn kind (`human`, `inherit`, `subagent` or `side_call`), a short
 session hash, the routed tier and model, and the reason (`jev`, `ratchet`, `pin`, `tag`,
-`secret`, `fail_open`, ...). It also records Jev's answer: its tier probabilities, the guard
+`secret`, `retry`, `fail_open`, ...). It also records Jev's answer: its tier probabilities, the guard
 answers, the guards that fired, latency and cost. If a secret was found, the log names its kind
 (e.g. `github_token`), never the value. Message text is never logged.
 

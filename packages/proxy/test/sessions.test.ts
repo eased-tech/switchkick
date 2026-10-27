@@ -36,10 +36,27 @@ describe("parseSessions", () => {
         ["not-a-hash", STATE],
         [KEY_B, { ...STATE, tier: "turbo" }],
         [KEY_B, { ...STATE, lastSeenAt: "yesterday" }],
+        [KEY_B, { ...STATE, decided: { conversation: 7, at: 1 } }],
+        [KEY_B, { ...STATE, decided: "c1" }],
         [KEY_B],
       ],
     });
     expect(parseSessions(text)).toEqual([[KEY_A, STATE]]);
+  });
+
+  it("reads the decided conversation, and files written before it existed", () => {
+    const decided = { ...STATE, decided: { conversation: "c1", at: 1_800_000_000_000 } };
+    const text = JSON.stringify({
+      version: 1,
+      sessions: [
+        [KEY_A, STATE],
+        [KEY_B, decided],
+      ],
+    });
+    expect(parseSessions(text)).toEqual([
+      [KEY_A, STATE],
+      [KEY_B, decided],
+    ]);
   });
 
   it.each(["", "not json", "[]", '{"version":2,"sessions":[]}'])("reads %j as empty", (text) => {

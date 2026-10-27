@@ -261,4 +261,44 @@ describe("analyzeTurn: Responses", () => {
     });
     expect(info).toMatchObject({ turn: "inherit", text: "run the tests", previous: null });
   });
+
+  describe("as Codex sends them", () => {
+    const session = "01a17c52-989a-7723-803d-176811151ca9";
+    const codex: Record<string, string> = { originator: "codex_exec", "session-id": session };
+    const body = { input: [{ type: "message", role: "user", content: "hi" }] };
+
+    it("names the session from Codex's session-id header", () => {
+      const header = (name: string) => codex[name];
+      expect(analyzeTurn("responses", body, header).clientSession).toBe(session);
+    });
+
+    it("also recognizes Codex by its x-codex-window-id header", () => {
+      const headers: Record<string, string> = { "x-codex-window-id": "w1", "session-id": session };
+      const info = analyzeTurn("responses", body, (name) => headers[name]);
+      expect(info.clientSession).toBe(session);
+    });
+
+    it("ignores a missing or empty session-id", () => {
+      for (const id of [undefined, "", "  "]) {
+        const headers: Record<string, string | undefined> = { ...codex, "session-id": id };
+        expect(analyzeTurn("responses", body, (name) => headers[name]).clientSession).toBeNull();
+      }
+    });
+
+    it("ignores a session-id header from other clients, which may not name a conversation", () => {
+      const headers: Record<string, string> = { originator: "my-app", "session-id": "user-42" };
+      expect(analyzeTurn("responses", body, (name) => headers[name]).clientSession).toBeNull();
+    });
+
+    it("reads a subagent's task, an agent_message item, as an inherited step", () => {
+      const info = analyzeTurn("responses", {
+        input: [
+          { type: "message", role: "developer", content: "You are a subagent." },
+          { type: "message", role: "user", content: "<environment_context/>" },
+          { type: "agent_message", content: "count the files" },
+        ],
+      });
+      expect(info.turn).toBe("inherit");
+    });
+  });
 });

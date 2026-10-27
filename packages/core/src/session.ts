@@ -15,6 +15,11 @@ export interface SessionState {
    * itself. Requests in the same session from a different conversation are subagents.
    */
   root: string | null;
+  /**
+   * The conversation of the last human turn decided, and when. A request repeating it soon after
+   * is the client retrying, so it gets the same tier without asking Jev again.
+   */
+  decided?: { conversation: string; at: number };
 }
 
 export const DEFAULT_MAX_SESSIONS = 10_000;

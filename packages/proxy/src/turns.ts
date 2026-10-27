@@ -23,7 +23,8 @@ export interface TurnInfo {
   humanMessages: number;
   /**
    * A session id the client sent that names one conversation: Claude Code's, from its
-   * `x-claude-code-session-id` header or `metadata.user_id`.
+   * `x-claude-code-session-id` header or `metadata.user_id`, or Codex's `session-id` header. Codex
+   * subagents send their parent's id.
    */
   clientSession: string | null;
   /**
@@ -42,6 +43,8 @@ export const SIDE_CALL_MAX_TOKENS = 512;
 
 /** The header Claude Code sends its session id in. */
 export const CLAUDE_CODE_SESSION_HEADER = "x-claude-code-session-id";
+/** The header Codex sends its session id in. */
+export const CODEX_SESSION_HEADER = "session-id";
 
 type Json = Record<string, unknown>;
 
@@ -155,8 +158,17 @@ function analyzeChat(body: Json): TurnInfo {
   return summarize(entries, system, ids, turn);
 }
 
-function analyzeResponses(body: Json): TurnInfo {
-  const ids = { clientSession: null, cacheKey: asString(body.prompt_cache_key) };
+/**
+ * Codex's session id. `session-id` is a generic name that other clients may use per user rather
+ * than per conversation, so it only counts on requests Codex marks as its own.
+ */
+function codexSession(header: (name: string) => string | undefined): string | null {
+  const codex = /^codex/i.test(header("originator") ?? "") || header("x-codex-window-id") != null;
+  return (codex && header(CODEX_SESSION_HEADER)?.trim()) || null;
+}
+
+function analyzeResponses(body: Json, header: (name: string) => string | undefined): TurnInfo {
+  const ids = { clientSession: codexSession(header), cacheKey: asString(body.prompt_cache_key) };
   const instructions = asString(body.instructions) ?? "";
   if (typeof body.input === "string") {
     const entry = { role: "user", human: true, text: body.input };
@@ -172,6 +184,7 @@ function analyzeResponses(body: Json): TurnInfo {
     .filter((s) => s !== "")
     .join("\n");
   // Tool calls and their outputs are entries too, so a tool output last means an inherited step.
+  // So does an `agent_message` last: the task a Codex subagent was given.
   const entries: Entry[] = items
     .filter((item) => !isInstruction(item.role))
     .map((item) => {
@@ -204,6 +217,6 @@ export function analyzeTurn(
     case "chat":
       return analyzeChat(body);
     case "responses":
-      return analyzeResponses(body);
+      return analyzeResponses(body, header);
   }
 }
