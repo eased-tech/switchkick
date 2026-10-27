@@ -1,6 +1,6 @@
 {
   "name": "@switchkick/core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Pure routing policy for switchkick: decision inputs in, model and effort out.",
   "license": "Apache-2.0",
   "homepage": "https://eased-tech.github.io/switchkick/",

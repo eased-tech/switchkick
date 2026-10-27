@@ -1,6 +1,6 @@
 {
   "name": "switchkick",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local proxy that routes OpenAI and Anthropic API traffic through OpenRouter, using Jev to pick the model for each turn.",
   "license": "Apache-2.0",
   "homepage": "https://eased-tech.github.io/switchkick/",
