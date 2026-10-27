@@ -120,6 +120,24 @@ const toolResult = (id: string) => ({
   content: [{ type: "tool_result", tool_use_id: id, content: "a.ts b.ts" }],
 });
 
+// Codex-shaped Responses requests: developer instructions, an environment-context user message,
+// then the conversation. Codex names the session in its `session-id` header.
+const CODEX_SESSION = "0b1c2d3e-aaaa-7bbb-8ccc-0123456789ab";
+const CODEX_HEADERS = { originator: "codex_exec", "session-id": CODEX_SESSION };
+const said = (role: string, text: string) => ({
+  type: "message",
+  role,
+  content: [{ type: role === "assistant" ? "output_text" : "input_text", text }],
+});
+function codex(items: unknown[], developer = "You are a coding agent.") {
+  return {
+    model: "gpt-5",
+    store: false,
+    prompt_cache_key: CODEX_SESSION,
+    input: [said("developer", developer), said("user", "<environment_context/>"), ...items],
+  };
+}
+
 describe("local mode", () => {
   it("routes a human turn to Jev's tier and logs the decision without any prompt text", async () => {
     const jev = fakeJev("frontier");
@@ -412,6 +430,68 @@ describe("local mode", () => {
     // that can only ratchet up.
     await routed("/v1/responses", { input: "something else" }, headers);
     expect(jev.calls).toHaveLength(1);
+  });
+
+  it("makes one Jev call when the client retries a request, and logs the retry", async () => {
+    const jev = fakeJev("balanced", "frontier");
+    const { log } = await setup({ jev, policy: { ...DEFAULT_POLICY, session: "per-request" } });
+    const body = codex([said("user", "fix the flaky test")]);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect((await routed("/v1/responses", body, CODEX_HEADERS)).model).toBe("test/balanced");
+    }
+    expect(jev.calls).toHaveLength(1);
+    await eventually(() => expect(log.entries).toHaveLength(3));
+    expect(log.entries.map((e) => e.reason)).toEqual(["jev", "retry", "retry"]);
+    expect(log.entries[1]).toMatchObject({ turn: "human", jev: null });
+  });
+
+  it("asks Jev again when the same message follows a reply, since that isn't a retry", async () => {
+    const jev = fakeJev("balanced", "frontier");
+    await setup({ jev, policy: { ...DEFAULT_POLICY, session: "per-request" } });
+    const first = [said("user", "run it again")];
+    await routed("/v1/responses", codex(first), CODEX_HEADERS);
+    const again = [...first, said("assistant", "Done."), said("user", "run it again")];
+    expect((await routed("/v1/responses", codex(again), CODEX_HEADERS)).model).toBe(
+      "test/frontier",
+    );
+    expect(jev.calls).toHaveLength(2);
+  });
+
+  it("asks Jev again when a retry follows a fallback", async () => {
+    const failed: DecideResult = { ok: false, error: { kind: "timeout", latencyMs: 1500 } };
+    const jev = fakeJev(failed, "fast");
+    await setup({ jev });
+    const body = codex([said("user", "rename the flag")]);
+    await routed("/v1/responses", body, CODEX_HEADERS);
+    await routed("/v1/responses", body, CODEX_HEADERS);
+    expect(jev.calls).toHaveLength(2);
+  });
+
+  it("puts a Codex subagent in its parent's session, so it inherits the tier", async () => {
+    const jev = fakeJev("frontier", "fast");
+    const { log } = await setup({ jev });
+    await routed("/v1/responses", codex([said("user", "plan the migration")]), CODEX_HEADERS);
+    // Codex gives a subagent its own instructions and hands it the task as an `agent_message`.
+    const task = {
+      type: "agent_message",
+      content: [{ type: "input_text", text: "count callers" }],
+    };
+    const subagent = codex([task], "You are a subagent.");
+    expect((await routed("/v1/responses", subagent, CODEX_HEADERS)).model).toBe("test/frontier");
+    expect(jev.calls).toHaveLength(1);
+    await eventually(() => expect(log.entries).toHaveLength(2));
+    expect(log.entries[1]).toMatchObject({ reason: "inherit", session: log.entries[0]?.session });
+  });
+
+  it("prefers the x-switchkick-session header to Codex's session id", async () => {
+    const jev = fakeJev("fast");
+    const { log } = await setup({ jev });
+    const body = codex([said("user", "hello")]);
+    await routed("/v1/responses", body, { ...CODEX_HEADERS, [SESSION_HEADER]: "a" });
+    await routed("/v1/responses", body, { ...CODEX_HEADERS, [SESSION_HEADER]: "b" });
+    await routed("/v1/responses", body, CODEX_HEADERS);
+    await eventually(() => expect(log.entries).toHaveLength(3));
+    expect(new Set(log.entries.map((e) => e.session)).size).toBe(3);
   });
 
   it("decides an inherited request from its turn's message after a restart", async () => {

@@ -109,6 +109,17 @@ function fingerprint(credential: string): Promise<string> {
   });
 }
 
+/**
+ * Identifies a request's whole conversation, so that the client retrying a request can be told
+ * from a new turn. It hashes the raw items, since tool calls and outputs carry no text, plus the
+ * Responses fields that point at stored history.
+ */
+function conversationOf(body: Record<string, unknown>): string {
+  const { system, instructions, messages, input, previous_response_id, conversation } = body;
+  const parts = [system, instructions, messages, input, previous_response_id, conversation];
+  return sha256(JSON.stringify(parts.map((part) => part ?? null))).slice(0, 32);
+}
+
 /** Compiles `*` wildcard patterns, matching the whole requested model name. */
 function compilePins(pins: Record<string, string>): [RegExp, string][] {
   return Object.entries(pins).map(([pattern, model]) => {
@@ -161,9 +172,10 @@ export interface LocalRouter {
  * Local mode. For each request: work out the turn and session, apply the hard rules, ask Jev
  * when a human turn needs a decision, and remember the session's tier.
  *
- * Sessions are keyed, first match wins, by the `x-switchkick-session` header, Claude Code's session
- * id, or a hash of `prompt_cache_key`, the system prompt, the first user message and the client's
- * API key. Only hashes are kept.
+ * Sessions are keyed, first match wins, by the `x-switchkick-session` header, Claude Code's or
+ * Codex's session id, or a hash of `prompt_cache_key`, the system prompt, the first user message
+ * and the client's API key. Only hashes are kept. A human turn that repeats the conversation just
+ * decided is a retry, and gets the same tier without a Jev call.
  */
 export function createLocalRouter(options: LocalRoute, envTier: Tier | null = null): LocalRouter {
   const sessions = options.sessions ?? new SessionStore(options.maxSessions);
@@ -205,6 +217,7 @@ export function createLocalRouter(options: LocalRoute, envTier: Tier | null = nu
             headerTier: headerTier(header(TIER_HEADER)),
             envTier,
             now: now(),
+            conversation: info.turn === "human" ? conversationOf(body) : null,
           },
           sessions.get(key),
           options.policy,

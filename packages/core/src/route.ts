@@ -37,7 +37,15 @@ export interface RouteInput {
   envTier: Tier | null;
   /** Milliseconds since the epoch. */
   now: number;
+  /**
+   * A fingerprint of the request's whole conversation. A human turn whose conversation was decided
+   * within {@link RETRY_WINDOW_MS} is the client retrying, and reuses that decision.
+   */
+  conversation?: string | null;
 }
+
+/** How long a decided conversation counts as a retry if it arrives again. */
+export const RETRY_WINDOW_MS = 5 * 60_000;
 
 /**
  * Why a request went where it did:
@@ -47,6 +55,7 @@ export interface RouteInput {
  * - `inherit`, `subagent`, `side_call`: no new human turn; the session's tier applies.
  * - `sticky`: `sticky` mode keeps the session's first decision.
  * - `ratchet_max`: the session is already at the top tier, so Jev wasn't asked.
+ * - `retry`: the client sent a conversation it had just sent, so the decision made then applies.
  * - `jev`: Jev's answer, after thresholds and guards.
  * - `ratchet`: Jev or an override chose lower than the session's tier, which was kept.
  * - `fail_open`: Jev failed or timed out.
@@ -60,6 +69,7 @@ export type RouteReason =
   | "side_call"
   | "sticky"
   | "ratchet_max"
+  | "retry"
   | "jev"
   | "ratchet"
   | "fail_open";
@@ -104,7 +114,8 @@ export type RoutePlan =
 /**
  * Routes one request. Hard rules come first, in order: a pinned model, a tier override (tag,
  * header, environment), the secret latch, then the session. Jev is asked only when a human turn
- * still needs a decision, and never about a message that contains a secret.
+ * still needs a decision, and never about a message that contains a secret. A retry of the human
+ * turn just decided reuses that decision.
  */
 export function planRoute(
   input: RouteInput,
@@ -188,13 +199,20 @@ export function planRoute(
       tier = current;
       why = "ratchet";
     }
+    const provisional = options.provisional ?? false;
     const next: SessionState = {
       ...(session ?? newSession(now, input.root)),
       tier,
-      provisional: options.provisional ?? false,
+      provisional,
       lastSeenAt: now,
     };
     next.root ??= input.root;
+    // A fallback isn't a decision, so a retry of its conversation asks again.
+    if (input.conversation && !provisional) {
+      next.decided = { conversation: input.conversation, at: now };
+    } else {
+      delete next.decided;
+    }
     return {
       decision: {
         ...base,
@@ -218,6 +236,16 @@ export function planRoute(
   }
   if (policy.session === "ratchet" && current === TOP_TIER) {
     return done(settle(current, "ratchet_max"));
+  }
+  const decided = session?.decided;
+  if (
+    current !== null &&
+    !session?.provisional &&
+    input.conversation &&
+    decided?.conversation === input.conversation &&
+    now - decided.at <= RETRY_WINDOW_MS
+  ) {
+    return done(settle(current, "retry"));
   }
 
   return {

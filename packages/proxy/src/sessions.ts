@@ -21,6 +21,11 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 const nullableString = (v: unknown) => v === null || typeof v === "string";
+const finite = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+
+/** `decided` came later, so files written before it still load. */
+const isDecided = (v: unknown) =>
+  v === undefined || (isRecord(v) && typeof v.conversation === "string" && finite(v.at));
 
 function isState(v: unknown): v is SessionState {
   return (
@@ -28,9 +33,9 @@ function isState(v: unknown): v is SessionState {
     (v.tier === null || isTier(v.tier)) &&
     typeof v.provisional === "boolean" &&
     typeof v.trusted === "boolean" &&
-    typeof v.lastSeenAt === "number" &&
-    Number.isFinite(v.lastSeenAt) &&
-    nullableString(v.root)
+    finite(v.lastSeenAt) &&
+    nullableString(v.root) &&
+    isDecided(v.decided)
   );
 }
 

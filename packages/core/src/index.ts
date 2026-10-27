@@ -20,6 +20,7 @@ export {
 export {
   type OverrideSource,
   planRoute,
+  RETRY_WINDOW_MS,
   type RouteDecision,
   type Routed,
   type RouteInput,

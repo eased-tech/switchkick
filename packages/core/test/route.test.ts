@@ -4,6 +4,7 @@ import {
   type JevVerdict,
   type Policy,
   planRoute,
+  RETRY_WINDOW_MS,
   type Routed,
   type RouteInput,
   type RoutePlan,
@@ -257,6 +258,71 @@ describe("planRoute", () => {
         tier: "fast",
         reason: "jev",
       });
+    });
+  });
+
+  describe("retries", () => {
+    const decided = (at = NOW - MINUTE) => session({ decided: { conversation: "c1", at } });
+
+    it("remember the conversation Jev decided", () => {
+      const routed = ask(
+        planRoute(input({ conversation: "c1" }), null, DEFAULT_POLICY),
+        verdictFor("fast"),
+      );
+      expect(routed?.session?.decided).toEqual({ conversation: "c1", at: NOW });
+    });
+
+    it("reuse the decision for the same conversation within the window, without asking Jev", () => {
+      const prior = decided(NOW - RETRY_WINDOW_MS);
+      const routed = done(planRoute(input({ conversation: "c1" }), prior, DEFAULT_POLICY));
+      expect(routed.decision).toMatchObject({ tier: "balanced", reason: "retry" });
+      expect(routed.session?.decided).toEqual({ conversation: "c1", at: NOW });
+    });
+
+    it("hold in every session mode, even per-request", () => {
+      const policy: Policy = { ...DEFAULT_POLICY, session: "per-request" };
+      const routed = done(planRoute(input({ conversation: "c1" }), decided(), policy));
+      expect(routed.decision.reason).toBe("retry");
+    });
+
+    it("ask Jev again for another conversation, after the window, or without a fingerprint", () => {
+      for (const [conversation, prior] of [
+        ["c2", decided()],
+        ["c1", decided(NOW - RETRY_WINDOW_MS - 1)],
+        [null, decided()],
+      ] as const) {
+        expect(planRoute(input({ conversation }), prior, DEFAULT_POLICY).kind).toBe("ask");
+      }
+    });
+
+    it("ask Jev again after a fallback, and don't remember the fallback as a decision", () => {
+      const prior = session({ provisional: true, decided: { conversation: "c1", at: NOW } });
+      const plan = planRoute(input({ conversation: "c1" }), prior, DEFAULT_POLICY);
+      expect(ask(plan, null)?.session?.decided).toBeUndefined();
+    });
+
+    it("ask Jev again once an idle reset has cleared the session's tier", () => {
+      const policy: Policy = { ...DEFAULT_POLICY, idleResetMs: MINUTE };
+      const prior = session({
+        lastSeenAt: NOW - 2 * MINUTE,
+        decided: { conversation: "c1", at: NOW - 2 * MINUTE },
+      });
+      expect(planRoute(input({ conversation: "c1" }), prior, policy).kind).toBe("ask");
+    });
+
+    it("still apply overrides and the secret latch first", () => {
+      const tagged = done(
+        planRoute(input({ text: "#frontier go", conversation: "c1" }), decided(), DEFAULT_POLICY),
+      );
+      expect(tagged.decision).toMatchObject({ tier: "frontier", reason: "tag" });
+      const latched = done(
+        planRoute(
+          input({ text: `use ghp_${"aB3dE5fG7h".repeat(4)}`, conversation: "c1" }),
+          decided(),
+          DEFAULT_POLICY,
+        ),
+      );
+      expect(latched.decision).toMatchObject({ target: "trusted", reason: "secret" });
     });
   });
 
