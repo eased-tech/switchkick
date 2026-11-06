@@ -1,4 +1,4 @@
-import { access, constants } from "node:fs/promises";
+import { access, constants, realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { VERSION } from "./app.js";
 import { stateDir } from "./log.js";
@@ -34,6 +34,8 @@ export interface ServiceCommand {
   argv: string[];
   /** Set when the command can stop working later, e.g. because it lives in npx's cache. */
   warning?: string;
+  /** Stable binary directory to put on the service PATH when running from a Homebrew keg. */
+  homebrewBinDir?: string;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -41,6 +43,18 @@ async function exists(path: string): Promise<boolean> {
     () => true,
     () => false,
   );
+}
+
+async function homebrewOptPath(path: string): Promise<string> {
+  const keg = /^(.*)\/Cellar\/([^/]+)\/[^/]+\/(.+)$/.exec(path);
+  if (!keg?.[2] || !keg[3]) return path;
+  const stable = join(keg[1] || "/", "opt", keg[2], keg[3]);
+  try {
+    if ((await realpath(stable)) === (await realpath(path))) return stable;
+  } catch {
+    // The opt link or the executable may be missing.
+  }
+  return path;
 }
 
 /** The script path inside a `bun build --compile` binary, which only exists in that binary. */
@@ -53,21 +67,27 @@ const COMPILED_SCRIPT = /^(?:\/\$bunfs\/|[A-Za-z]:[\\/]~BUN[\\/])/;
  */
 export async function serviceCommand(system: System, config?: string): Promise<ServiceCommand> {
   const tail = ["serve", ...(config ? ["--config", config] : [])];
-  if (COMPILED_SCRIPT.test(system.scriptPath)) return { argv: [system.execPath, ...tail] };
+  const execPath = await homebrewOptPath(system.execPath);
+  const binDir = execPath === system.execPath ? {} : { homebrewBinDir: dirname(execPath) };
+  if (COMPILED_SCRIPT.test(system.scriptPath)) return { argv: [execPath, ...tail], ...binDir };
   if (/[\\/]_npx[\\/]/.test(system.scriptPath)) {
     const npx = join(dirname(system.execPath), system.platform === "win32" ? "npx.cmd" : "npx");
     if (await exists(npx)) {
-      return { argv: [npx, "--yes", `switchkick@${VERSION}`, ...tail] };
+      return {
+        argv: [await homebrewOptPath(npx), "--yes", `switchkick@${VERSION}`, ...tail],
+        ...binDir,
+      };
     }
     return {
-      argv: [system.execPath, system.scriptPath, ...tail],
+      argv: [execPath, system.scriptPath, ...tail],
+      ...binDir,
       warning:
         `switchkick is running from npx's cache (${system.scriptPath}), which npm can clean ` +
         "out, and the service would then fail to start. Install it with `npm install -g " +
         "switchkick` and run `switchkick setup` again.",
     };
   }
-  return { argv: [system.execPath, system.scriptPath, ...tail] };
+  return { argv: [execPath, system.scriptPath, ...tail], ...binDir };
 }
 
 const xml = (text: string) =>
@@ -77,11 +97,11 @@ const xml = (text: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 
-function serviceEnv(system: System): [string, string][] {
+function serviceEnv(system: System, command: ServiceCommand): [string, string][] {
   // launchd and systemd start services with a minimal PATH. Node's directory is added for npx,
   // whose script runs `env node`; the system directories hold `security` and `secret-tool`.
   const path = [
-    dirname(system.execPath),
+    command.homebrewBinDir ?? dirname(system.execPath),
     "/usr/local/bin",
     "/usr/bin",
     "/bin",
@@ -101,7 +121,7 @@ export function launchdPlist(system: System, command: ServiceCommand): string {
   const log = serviceLogPath(system.env);
   const strings = (values: string[]) =>
     values.map((v) => `    <string>${xml(v)}</string>`).join("\n");
-  const env = serviceEnv(system)
+  const env = serviceEnv(system, command)
     .map(([k, v]) => `    <key>${xml(k)}</key>\n    <string>${xml(v)}</string>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -150,7 +170,7 @@ function systemdQuote(value: string): string {
 
 /** A systemd user unit that starts with the user's session and restarts switchkick on failure. */
 export function systemdUnit(system: System, command: ServiceCommand): string {
-  const env = serviceEnv(system)
+  const env = serviceEnv(system, command)
     .map(([k, v]) => `Environment=${systemdQuote(`${k}=${v}`)}`)
     .join("\n");
   return `# Written by \`switchkick setup\`; \`switchkick uninstall\` removes it.

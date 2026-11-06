@@ -1,7 +1,8 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { VERSION } from "../src/index.js";
+import { launchdPlist, serviceCommand, systemdUnit } from "../src/service.js";
 import { exit, type FakeMachine, fakeMachine, json, ok } from "./system.js";
 
 const KEY = "sk-or-v1-0123456789abcdef";
@@ -185,6 +186,47 @@ describe("switchkick setup", () => {
       "<string>/opt/homebrew/bin/switchkick</string>\n    <string>serve</string>",
     );
     expect(plist).not.toContain("$bunfs");
+  });
+
+  it.each([
+    { name: "switchkick", scriptPath: "/$bunfs/root/switchkick", renderer: launchdPlist },
+    { name: "node", scriptPath: "/opt/switchkick/dist/cli.js", renderer: systemdUnit },
+  ])(
+    "keeps Homebrew's $name path stable in the service file",
+    async ({ name, scriptPath, renderer }) => {
+      machine = await fakeMachine({ scriptPath });
+      const cellar = join(machine.dir, "Cellar", name, "1.0.0");
+      const opt = join(machine.dir, "opt");
+      await mkdir(join(cellar, "bin"), { recursive: true });
+      await mkdir(opt);
+      await symlink(cellar, join(opt, name), "junction");
+      const executable = join(cellar, "bin", name);
+      await writeFile(executable, "#!/bin/sh\n", { mode: 0o755 });
+      machine.system.execPath = executable;
+
+      const command = await serviceCommand(machine.system);
+      const stable = join(opt, name, "bin", name);
+      expect(command.argv[0]).toBe(stable);
+      const service = renderer(machine.system, command);
+      expect(service).toContain(stable);
+      expect(service).toContain(`${join(opt, name, "bin")}:/usr/local/bin`);
+      expect(service).not.toContain(cellar);
+    },
+  );
+
+  it("keeps the executable path when Homebrew's opt link points to a different keg", async () => {
+    machine = await fakeMachine({ scriptPath: "/$bunfs/root/switchkick" });
+    const current = join(machine.dir, "Cellar", "switchkick", "1.0.0", "bin");
+    const other = join(machine.dir, "Cellar", "switchkick", "2.0.0", "bin");
+    for (const dir of [current, other]) {
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, "switchkick"), "#!/bin/sh\n", { mode: 0o755 });
+    }
+    const opt = join(machine.dir, "opt");
+    await mkdir(opt);
+    await symlink(join(other, ".."), join(opt, "switchkick"), "junction");
+    machine.system.execPath = join(current, "switchkick");
+    expect((await serviceCommand(machine.system)).argv[0]).toBe(machine.system.execPath);
   });
 
   it("reports a service that doesn't come up", async () => {

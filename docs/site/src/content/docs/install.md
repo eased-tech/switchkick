@@ -23,6 +23,11 @@ brew install eased-tech/switchkick/switchkick
 
 This installs a standalone binary, so it doesn't need Node.js.
 
+When `switchkick setup` finds that Homebrew's `opt` path points to the running
+binary, it uses that path in the service file so the service can restart after
+a Homebrew upgrade. Run `switchkick setup` again to refresh an existing service
+file that points to a versioned Cellar path.
+
 ## Standalone binary
 
 Download `switchkick-<os>-<arch>` for linux-x64, linux-arm64, darwin-x64, darwin-arm64 or
